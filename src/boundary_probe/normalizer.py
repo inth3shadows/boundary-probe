@@ -13,46 +13,94 @@ Key invariant this module enforces:
 """
 from __future__ import annotations
 
+import ipaddress
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from boundary_probe.collectors.path import PathSlice
+
+_LOSS_THRESHOLD_PCT = 20.0
 
 
 @dataclass(slots=True)
 class PathSignals:
-    """Normalized path signals derived from raw hop data.
-
-    Matches the two path-related fields on SignalSnapshot so Phase 1 can
-    substitute this type cleanly when the rich-facts model lands.
-    """
+    """Normalized path signals derived from raw hop data."""
 
     packet_loss_after_hop1: bool = False
     packet_loss_multiple_targets: bool = False
 
 
-def normalize_path_signals(raw_hops: list) -> PathSignals:
-    """Derive stable PathSignals from a list of raw hop records.
+def normalize_path_signals(
+    raw_hops: list[dict],
+    secondary_hops: list[dict] | None = None,
+) -> PathSignals:
+    """Derive stable PathSignals from raw hop records.
 
     Args:
-        raw_hops: List of per-hop dicts as returned by the Phase 1 path
-            collector. Expected keys per hop: ``index`` (int, 1-based),
-            ``loss_pct`` (float 0-100), ``rtt_ms`` (float | None).
+        raw_hops: Hop dicts from the path collector (keys: index, loss_pct, rtt_ms, host).
+        secondary_hops: Optional second-target hop list for packet_loss_multiple_targets.
 
     Returns:
         PathSignals with conservative loss assessment.
-
-    Algorithm (to be implemented in Phase 1 alongside the path collector):
-        1. Skip hop 1 (local gateway — handled by gateway collector).
-        2. For each hop H from index 2 onward:
-           - Mark as "lossy" only if loss_pct > 20% AND at least one of
-             hop H+1 or H+2 also exceeds 20% loss (or is absent, meaning
-             all subsequent hops timed out — that counts as persistent loss).
-        3. packet_loss_after_hop1 = True if any hop from index 2 is lossy.
-        4. Requires data from at least two independent target traces to set
-           packet_loss_multiple_targets = True (caller responsibility).
-
-    Notes:
-        - IPv4-only. IPv6 trace data is rejected at the collector level.
-        - Windows codepage: collector must decode tracert output as cp437
-          before passing raw_hops here.
-        - The 20% threshold is provisional; Phase 5 calibration will tune it.
     """
-    raise NotImplementedError("path normalizer lands with Phase 1 path collector")
+    for hop in raw_hops:
+        host = hop.get("host", "")
+        if ":" in host:
+            try:
+                if isinstance(ipaddress.ip_address(host), ipaddress.IPv6Address):
+                    raise ValueError(f"IPv6 hop in trace; collector should have rejected this: {host!r}")
+            except ValueError as exc:
+                if "IPv6 hop" in str(exc):
+                    raise
+
+    primary_loss = _has_persistent_loss(raw_hops)
+
+    if not primary_loss or secondary_hops is None:
+        return PathSignals(packet_loss_after_hop1=primary_loss, packet_loss_multiple_targets=False)
+
+    secondary_loss = _has_persistent_loss(secondary_hops)
+    return PathSignals(
+        packet_loss_after_hop1=primary_loss,
+        packet_loss_multiple_targets=secondary_loss,
+    )
+
+
+def _has_persistent_loss(hops: list[dict]) -> bool:
+    """Return True if any hop at index ≥ 2 shows persistent loss (sustained across look-ahead)."""
+    if len(hops) < 2:
+        return False
+
+    hop_by_index = {h["index"]: h for h in hops}
+
+    for hop in hops:
+        idx = hop["index"]
+        if idx < 2:
+            continue
+
+        current_lossy = hop["loss_pct"] > _LOSS_THRESHOLD_PCT
+        if not current_lossy:
+            continue
+
+        next1 = hop_by_index.get(idx + 1)
+        next2 = hop_by_index.get(idx + 2)
+
+        next1_lossy = next1["loss_pct"] > _LOSS_THRESHOLD_PCT if next1 is not None else True
+        next2_lossy = next2["loss_pct"] > _LOSS_THRESHOLD_PCT if next2 is not None else True
+
+        if next1_lossy or next2_lossy:
+            return True
+
+    return False
+
+
+def normalize_from_paths(
+    primary: "PathSlice",
+    secondary: "PathSlice | None",
+) -> PathSignals:
+    """Adapter called by orchestrator. Incomplete primary trace returns no signal."""
+    if not primary.completed:
+        return PathSignals(packet_loss_after_hop1=False, packet_loss_multiple_targets=False)
+
+    secondary_hops = secondary.raw_hops if secondary is not None else None
+    return normalize_path_signals(primary.raw_hops, secondary_hops)

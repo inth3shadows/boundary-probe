@@ -1,0 +1,11 @@
+
+Tracing route to example.com [93.184.216.34]
+over a maximum of 10 hops:
+
+  1     2 ms     2 ms     2 ms  192.168.1.1
+  2    11 ms    10 ms    11 ms  96.120.89.130
+  3     *        *        *     Request timed out.
+  4     *        *        *     Request timed out.
+  5     *        *        *     Request timed out.
+
+Trace complete.

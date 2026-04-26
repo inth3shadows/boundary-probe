@@ -23,3 +23,7 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "integration: hits real network (ping/tracert/DNS). Skipped by default.",
+]
+addopts = "-m 'not integration'"

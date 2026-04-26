@@ -1,0 +1,16 @@
+
+Tracing route to 192.168.99.99
+over a maximum of 10 hops:
+
+  1     2 ms     2 ms     2 ms  192.168.1.1
+  2     *        *        *     Request timed out.
+  3     *        *        *     Request timed out.
+  4     *        *        *     Request timed out.
+  5     *        *        *     Request timed out.
+  6     *        *        *     Request timed out.
+  7     *        *        *     Request timed out.
+  8     *        *        *     Request timed out.
+  9     *        *        *     Request timed out.
+ 10     *        *        *     Request timed out.
+
+Trace complete.

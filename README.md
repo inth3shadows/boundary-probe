@@ -1,68 +1,23 @@
 # Boundary Probe
 
-`boundary-probe` is a new project for deterministic network boundary diagnosis.
+`boundary-probe` is a Windows-first CLI tool for deterministic network boundary diagnosis. It runs a targeted set of probes, classifies the most likely failure boundary with a confidence score, and gives the operator specific remediation steps — not generic advice.
 
-The product goal is narrow on purpose:
-- run a small set of high-value diagnostics
-- identify the most likely failure boundary
-- attach evidence and a confidence score
-- tell the operator what to do next
+The five boundaries it answers: **local device / LAN**, **router-gateway**, **DNS**, **ISP upstream path**, and **remote service**. Every result is backed by evidence collected in the same run and stored locally in SQLite for history review.
 
-This is not meant to be another raw `ping` or `traceroute` wrapper. The differentiator is interpretation: local device vs router vs DNS vs ISP upstream vs remote service, with remediation that is operational instead of generic.
+## How It Works
 
-## Product Direction
+`boundary-probe diagnose <target>` runs six collectors sequentially — gateway ping, DNS resolution, IP-level canary ping, control-host quorum check, target-service reachability, and a traceroute path analysis — then feeds the results into a deterministic rule engine. The engine emits a boundary classification, a confidence score, and an evidence-backed remediation list. Every run is persisted to a local SQLite database.
 
-The repo started as a CLI-first bootstrap because that was the fastest way to lock the core diagnosis model.
+The rule engine is intentionally deterministic: same signals → same result, every time. Probabilistic layers and LLM-assisted diagnosis are deferred until the rules are calibrated on real-world captures.
 
-The chosen v1 product shape is now:
-- Windows-first
-- local web UI
-- Python backend with a shared deterministic engine
-- local SQLite persistence
-- future hosted second phase after the local product is trustworthy
+## Prerequisites
 
-The CLI remains useful because it supports:
-- deterministic rules
-- reproducible test fixtures
-- low-friction local execution
-- reuse inside the local web UI and later hosted workflows
-
-Current baseline:
-- product brief
-- technical direction
-- initial rule-model notes
-- minimal Python package
-- a demo diagnosis engine with early boundary rules
-
-## Initial Scope
-
-The first useful version should answer:
-- Is the problem on the local device or LAN?
-- Is the router or gateway the likely boundary?
-- Is DNS the real issue?
-- Is the ISP or upstream path degraded?
-- Is the remote service failing while the broader internet is healthy?
-
-The first useful version should not try to solve everything:
-- no SaaS control plane yet
-- no LLM-first diagnosis path
-- no vendor-specific router integrations
-- no decorative graph-heavy UI
-
-## Repo Layout
-
-- `docs/product-brief.md` - product framing, user, scope, and why this project exists
-- `docs/project-contract.md` - operating contract for scope, confidence, and decision standards
-- `docs/architecture-decision.md` - chosen product shape and phased delivery model
-- `docs/expert-review-framework.md` - how major build decisions are reviewed and weighted
-- `docs/technical-direction.md` - architecture choice and implementation path
-- `docs/rules-engine.md` - early rules and confidence model
-- `src/boundary_probe` - package code
-- `tests` - smoke coverage for the deterministic engine and CLI
+- Windows 10 or 11 (64-bit)
+- Python 3.11 or newer
+- `ping.exe` and `tracert.exe` on PATH (standard on all supported Windows versions)
+- No additional runtime dependencies — stdlib only
 
 ## Quick Start
-
-Create a virtual environment and install in editable mode:
 
 ```powershell
 python -m venv .venv
@@ -70,28 +25,79 @@ python -m venv .venv
 pip install -e .[dev]
 ```
 
-Run the demo diagnosis scenarios:
+Diagnose a target:
 
 ```powershell
-python -m boundary_probe.cli demo dns-failure
-python -m boundary_probe.cli demo router-down
-python -m boundary_probe.cli roadmap
+boundary-probe diagnose example.com
+boundary-probe diagnose https://app.example.com
+boundary-probe diagnose 1.1.1.1
+```
+
+Skip the traceroute for a faster result:
+
+```powershell
+boundary-probe diagnose example.com --no-path
+```
+
+View recent run history:
+
+```powershell
+boundary-probe diagnose --history 10
+```
+
+Capture a fixture from a live run (for testing or sharing):
+
+```powershell
+boundary-probe capture my-snapshot --target example.com
 ```
 
 Run tests:
 
 ```powershell
 pytest
+pytest -m integration   # requires live network
 ```
 
-## Working Decisions
+## Project Structure
 
-- Repo name: `boundary-probe`
-- V1 OS scope: Windows first
-- V1 surface: local web UI
-- Language: Python 3.11+
-- Storage: local SQLite from day one
-- Collector set: gateway, DNS, control-host, target-specific, path, and interface facts
-- Escalation outputs: ISP email, hosting/service email, local network incident summary
-- Diagnosis style: deterministic rules before any probabilistic or LLM layer
-- Product promise: confidence-backed findings with explicit remediation
+```
+src/boundary_probe/
+    cli.py              Entry point — subcommands: diagnose, capture, roadmap
+    engine.py           Deterministic rule engine and confidence tiers
+    models.py           SignalSnapshot (7 booleans), Diagnosis, EvidenceItem
+    targets.py          Target parser — host / IP / URL classification
+    normalizer.py       Path signal normalizer — persistent-loss detection
+    collectors/         Windows subprocess collectors (ping, tracert, DNS, TCP)
+    store/              SQLite persistence — schema, insert, fetch
+    templates/          Escalation template generators (Phase 4)
+tests/
+    fixtures/           JSON signal snapshots and raw ping/tracert text fixtures
+    test_engine.py      Rule engine unit tests
+    test_parsers.py     ping/tracert/route-print parser tests
+    test_collectors_unit.py  Per-collector tests with FakeRunner (no network)
+    test_normalizer.py  Path normalizer algorithm tests
+    test_store.py       SQLite schema and round-trip tests
+    test_cli.py         CLI integration tests (monkeypatched collectors)
+    test_collectors_integration.py  Live-network tests (gated: -m integration)
+docs/
+    product-brief.md          Product framing and scope
+    architecture-decision.md  Chosen product shape and phased delivery
+    technical-direction.md    Architecture and implementation path
+    rules-engine.md           Rule model and confidence design
+```
+
+## Phase Status
+
+| Phase | Scope | Status |
+|-------|-------|--------|
+| 0 | Scaffold — rule engine, CLI stub, target parser, fixtures | Done |
+| 1 | Real collectors, path normalizer, SQLite persistence | Done |
+| 2 | Rich signal facts, rule calibration, config file | Planned |
+| 3 | Local web UI | Planned |
+| 4 | Escalation output (clipboard + .txt) | Planned |
+| 5 | Hardening and calibration | Planned |
+
+## Related Documentation
+
+- [Technical Reference](TECHNICAL.md) — architecture, collector design, deployment, maintenance
+- [Usage Guide](USAGE.md) — end-user guide for running diagnoses and reading results

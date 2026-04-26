@@ -1,0 +1,10 @@
+{
+  "scenario": "isp-path",
+  "gateway_reachable": true,
+  "dns_ok": true,
+  "ip_connectivity_ok": true,
+  "control_hosts_ok": false,
+  "target_service_ok": false,
+  "packet_loss_after_hop1": true,
+  "packet_loss_multiple_targets": true
+}

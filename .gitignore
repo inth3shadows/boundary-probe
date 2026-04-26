@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+dist/
+build/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+
+.aider*
+.claude/
+what is the next step in this repo

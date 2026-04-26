@@ -1,0 +1,10 @@
+{
+  "scenario": "router-down",
+  "gateway_reachable": false,
+  "dns_ok": false,
+  "ip_connectivity_ok": false,
+  "control_hosts_ok": false,
+  "target_service_ok": false,
+  "packet_loss_after_hop1": false,
+  "packet_loss_multiple_targets": false
+}

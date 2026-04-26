@@ -1,0 +1,10 @@
+{
+  "scenario": "remote-service",
+  "gateway_reachable": true,
+  "dns_ok": true,
+  "ip_connectivity_ok": true,
+  "control_hosts_ok": true,
+  "target_service_ok": false,
+  "packet_loss_after_hop1": false,
+  "packet_loss_multiple_targets": false
+}

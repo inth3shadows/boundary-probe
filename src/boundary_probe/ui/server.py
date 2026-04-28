@@ -10,7 +10,7 @@ from boundary_probe.engine import diagnose
 from boundary_probe.store import connect, fetch_recent, fetch_run, insert_run
 from boundary_probe.targets import parse_target
 from boundary_probe.templates import render_escalation
-from boundary_probe.ui.templates import render_detail, render_error, render_history
+from boundary_probe.ui.templates import render_detail, render_error, render_history, render_loading
 
 _MAX_HISTORY = 50
 
@@ -46,10 +46,21 @@ class ProbeRequestHandler(http.server.BaseHTTPRequestHandler):
         else:
             self._send_html(404, render_error("Page not found.", "/"))
 
+    def _send_json(self, code: int, data: dict) -> None:
+        import json
+        encoded = json.dumps(data).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(encoded)))
+        self.end_headers()
+        self.wfile.write(encoded)
+
     def do_POST(self) -> None:
         path = self.path.split("?", 1)[0]
         if path == "/diagnose":
-            self._handle_diagnose()
+            self._handle_diagnose_loading()
+        elif path == "/api/diagnose":
+            self._handle_api_diagnose()
         else:
             self._send_html(404, render_error("Not found.", "/"))
 
@@ -82,32 +93,42 @@ class ProbeRequestHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(encoded)
 
-    def _handle_diagnose(self) -> None:
+    def _read_params(self) -> tuple[str, bool]:
         length = int(self.headers.get("Content-Length", 0))
         raw = self.rfile.read(length).decode("utf-8", errors="replace")
         params = urllib.parse.parse_qs(raw, keep_blank_values=False)
-
         target_str = (params.get("target") or [""])[0].strip()
+        no_path = "no_path" in params
+        return target_str, no_path
+
+    def _handle_diagnose_loading(self) -> None:
+        target_str, no_path = self._read_params()
         if not target_str:
             self._send_html(400, render_error("Target is required.", "/"))
             return
-
-        no_path = "no_path" in params
-
         try:
-            parsed = parse_target(target_str)
+            parse_target(target_str)
         except ValueError as exc:
             self._send_html(400, render_error(f"Invalid target: {exc}", "/"))
             return
+        self._send_html(200, render_loading(target_str, no_path))
 
+    def _handle_api_diagnose(self) -> None:
+        target_str, no_path = self._read_params()
+        if not target_str:
+            self._send_json(400, {"error": "Target is required."})
+            return
+        try:
+            parsed = parse_target(target_str)
+        except ValueError as exc:
+            self._send_json(400, {"error": str(exc)})
+            return
         try:
             result = collect_signals(parsed, skip_path=no_path)
         except FileNotFoundError as exc:
-            self._send_html(500, render_error(f"Required system tool not found: {exc}", "/"))
+            self._send_json(500, {"error": f"Required system tool not found: {exc}"})
             return
-
         diag = diagnose(result.snapshot)
-
         with connect() as conn:
             run_uuid = insert_run(
                 conn,
@@ -116,8 +137,7 @@ class ProbeRequestHandler(http.server.BaseHTTPRequestHandler):
                 diagnosis=diag,
                 collection_result=result,
             )
-
-        self._send_redirect(f"/run/{run_uuid}")
+        self._send_json(200, {"run_uuid": run_uuid})
 
 
 class ThreadingProbeServer(socketserver.ThreadingMixIn, http.server.HTTPServer):

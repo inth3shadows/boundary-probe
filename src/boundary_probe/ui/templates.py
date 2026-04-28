@@ -288,6 +288,114 @@ def render_detail(row: sqlite3.Row) -> str:
     return _page(f"Run — {target_raw}", body)
 
 
+def render_loading(target: str, no_path: bool) -> str:
+    import json as _json
+    target_js = _json.dumps(target)
+    no_path_js = "true" if no_path else "false"
+    body_val = urllib.parse.urlencode({"target": target, **({"no_path": "on"} if no_path else {})})
+    body_js = _json.dumps(body_val)
+
+    script = f"""
+const TARGET = {target_js};
+const BODY   = {body_js};
+
+const STEPS = [
+  "Probing gateway…",
+  "Resolving DNS…",
+  "Pinging canary IP…",
+  "Checking control hosts…",
+  "Reaching target service…",
+  "Tracing path…",
+  "Analyzing signals…",
+  "Almost there…",
+];
+let stepIdx = 0;
+const statusEl = document.getElementById("status");
+const stepTimer = setInterval(() => {{
+  stepIdx = (stepIdx + 1) % STEPS.length;
+  statusEl.textContent = STEPS[stepIdx];
+}}, 5000);
+
+// Elapsed clock
+const startTime = Date.now();
+const clockEl = document.getElementById("clock");
+setInterval(() => {{
+  const s = Math.floor((Date.now() - startTime) / 1000);
+  clockEl.textContent = s + "s";
+}}, 1000);
+
+// Minigame — catch the packet
+let score = 0;
+const scoreEl = document.getElementById("score");
+const pkt = document.getElementById("packet");
+const arena = document.getElementById("arena");
+let px = 50, py = 50, vx = 2.2, vy = 1.7;
+function movePacket() {{
+  const W = arena.clientWidth  - pkt.offsetWidth;
+  const H = arena.clientHeight - pkt.offsetHeight;
+  px += vx; py += vy;
+  if (px <= 0 || px >= W) {{ vx *= -1; px = Math.max(0, Math.min(px, W)); }}
+  if (py <= 0 || py >= H) {{ vy *= -1; py = Math.max(0, Math.min(py, H)); }}
+  pkt.style.left = px + "px";
+  pkt.style.top  = py + "px";
+}}
+const gameTimer = setInterval(movePacket, 16);
+pkt.addEventListener("click", () => {{
+  score++;
+  scoreEl.textContent = score;
+  vx *= 1.08; vy *= 1.08;
+  pkt.style.transform = "scale(1.4)";
+  setTimeout(() => pkt.style.transform = "", 120);
+}});
+
+// Fire the real diagnosis
+fetch("/api/diagnose", {{
+  method: "POST",
+  headers: {{"Content-Type": "application/x-www-form-urlencoded"}},
+  body: BODY,
+}})
+.then(r => r.json())
+.then(data => {{
+  clearInterval(stepTimer); clearInterval(gameTimer);
+  if (data.run_uuid) {{
+    statusEl.textContent = "Done! Redirecting…";
+    window.location.href = "/run/" + data.run_uuid;
+  }} else {{
+    statusEl.textContent = "Error: " + (data.error || "unknown error");
+    statusEl.style.color = "#c0392b";
+  }}
+}})
+.catch(err => {{
+  statusEl.textContent = "Request failed: " + err;
+  statusEl.style.color = "#c0392b";
+}});
+"""
+
+    body = (
+        '<div class="back"><a href="/">← Cancel</a></div>\n'
+        '<div class="card" style="max-width:520px">\n'
+        f'  <h2 style="margin-bottom:6px">Diagnosing</h2>\n'
+        f'  <p class="meta" style="margin-bottom:16px">'
+        f'<strong>{_h(target)}</strong></p>\n'
+        '  <p id="status" style="font-size:13px;color:#555;min-height:1.4em">'
+        'Probing gateway…</p>\n'
+        '  <p style="font-size:12px;color:#aaa;margin-top:4px">'
+        'elapsed: <span id="clock">0s</span></p>\n'
+        '  <div id="arena" style="position:relative;width:100%;height:160px;'
+        'background:#f0f4ff;border-radius:6px;margin-top:16px;overflow:hidden;'
+        'border:1px solid #dde4f5;cursor:crosshair">\n'
+        '    <span id="packet" style="position:absolute;left:50px;top:50px;'
+        'font-size:22px;user-select:none;transition:transform 0.1s;cursor:pointer"'
+        '>&#x1F4E6;</span>\n'
+        '  </div>\n'
+        '  <p style="font-size:12px;color:#888;margin-top:8px">'
+        'Catch the packets while you wait — score: <strong id="score">0</strong></p>\n'
+        f'  <script>{script}</script>\n'
+        '</div>'
+    )
+    return _page(f"Diagnosing {target}…", body)
+
+
 def render_error(msg: str, back: str = "/") -> str:
     body = (
         f'<div class="back"><a href="{_h(back)}">← Back</a></div>\n'

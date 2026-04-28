@@ -103,15 +103,29 @@ class TestUIRoutes:
         status, _ = _get(host, port, "/no/such/page")
         assert status == 404
 
-    def test_diagnose_post_redirects(self, ui_server, monkeypatch, fake_collection_result):
+    def test_diagnose_post_returns_loading_page(self, ui_server):
+        host, port, _ = ui_server
+        # POST /diagnose now returns a loading page immediately (no blocking)
+        status, location, ct = _post(host, port, "/diagnose", {"target": "8.8.8.8"})
+        assert status == 200
+        assert "text/html" in ct
+
+    def test_api_diagnose_returns_json(self, ui_server, monkeypatch, fake_collection_result):
         host, port, _ = ui_server
         monkeypatch.setattr(
             "boundary_probe.ui.server.collect_signals",
             lambda *a, **kw: fake_collection_result,
         )
-        status, location, _ = _post(host, port, "/diagnose", {"target": "8.8.8.8"})
-        assert status == 303
-        assert location.startswith("/run/")
+        conn = http.client.HTTPConnection(host, port, timeout=30)
+        body = urllib.parse.urlencode({"target": "8.8.8.8"})
+        conn.request("POST", "/api/diagnose", body,
+                     {"Content-Type": "application/x-www-form-urlencoded"})
+        resp = conn.getresponse()
+        import json
+        data = json.loads(resp.read())
+        conn.close()
+        assert resp.status == 200
+        assert "run_uuid" in data
 
     def test_diagnose_empty_target_400(self, ui_server):
         host, port, _ = ui_server

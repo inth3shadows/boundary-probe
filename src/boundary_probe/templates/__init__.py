@@ -9,6 +9,26 @@ _SEP = "-" * 60
 def render_escalation(row: sqlite3.Row) -> str:
     """Select and render the appropriate escalation template for a run."""
     boundary = row["boundary"]
+
+    # All-healthy inconclusive: nothing failed, nothing to escalate
+    all_healthy = (
+        boundary == "inconclusive"
+        and row["gateway_reachable"]
+        and row["dns_ok"]
+        and row["ip_connectivity_ok"]
+        and row["control_hosts_ok"]
+        and row["target_service_ok"]
+    )
+    if all_healthy:
+        title = "NETWORK STATUS REPORT — ALL PROBES HEALTHY"
+        action = (
+            "All probes returned healthy results. No network boundary failure was detected.\n"
+            "If you are experiencing application-level issues, they are likely unrelated\n"
+            "to basic network connectivity (e.g. authentication, rate limiting, app errors).\n"
+            "Run again with a specific failing target to capture a fault state."
+        )
+        return _format_body(title, action, row)
+
     if boundary == "isp-upstream":
         title = "INTERNET SERVICE PROVIDER ESCALATION REPORT"
         action = (

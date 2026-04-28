@@ -116,13 +116,19 @@ def diagnose(signals: SignalSnapshot) -> Diagnosis:
             ],
         )
 
+    evidence = [
+        EvidenceItem("gateway", "reachable" if signals.gateway_reachable else "unreachable"),
+        EvidenceItem("dns", "ok" if signals.dns_ok else "failed"),
+        EvidenceItem("ip-connectivity", "ok" if signals.ip_connectivity_ok else "failed"),
+        EvidenceItem("controls", "ok" if signals.control_hosts_ok else "failed"),
+        EvidenceItem("target", "reachable" if signals.target_service_ok else "failed"),
+        EvidenceItem("coverage", "Signal set did not isolate a single boundary cleanly."),
+    ]
     return Diagnosis(
         boundary="inconclusive",
         confidence=0.5,
         summary="The current signal set does not isolate the boundary cleanly.",
-        evidence=[
-            EvidenceItem("coverage", "The available checks are not strong enough to place the fault with confidence."),
-        ],
+        evidence=evidence,
         remediation=[
             "Collect gateway, DNS, and at least one control-host result in the same run.",
             "Repeat the diagnostics to rule out a transient failure before drawing a conclusion.",

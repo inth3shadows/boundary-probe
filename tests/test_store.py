@@ -51,7 +51,7 @@ def _make_collection_result():
         gateway=GatewaySlice(reachable=True, gateway_ip="192.168.1.1", rtt_ms=2.0, note=""),
         dns=DnsSlice(ok=True, resolved_ips=["93.184.216.34"], resolver_used=None, elapsed_ms=5, note=""),
         ip=IpConnectivitySlice(ok=True, target_ip="1.1.1.1", loss_pct=0.0, avg_rtt_ms=4.0, note=""),
-        controls=ControlHostsSlice(all_ok=True, results=[
+        controls=ControlHostsSlice(all_ok=True, ok_count=4, total=4, results=[
             ControlHostResult(host="1.1.1.1", reachable=True, loss_pct=0.0, avg_rtt_ms=4.0),
             ControlHostResult(host="8.8.8.8", reachable=True, loss_pct=0.0, avg_rtt_ms=6.0),
             ControlHostResult(host="8.8.4.4", reachable=True, loss_pct=0.0, avg_rtt_ms=6.0),

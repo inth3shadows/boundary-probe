@@ -10,11 +10,10 @@ from boundary_probe.collectors.gateway import GatewaySlice, collect_gateway
 from boundary_probe.collectors.ip_connectivity import IpConnectivitySlice, collect_ip_connectivity
 from boundary_probe.collectors.path import PathSlice, collect_path
 from boundary_probe.collectors.target_service import TargetServiceSlice, collect_target_service
+from boundary_probe.config import load_config
 from boundary_probe.models import SignalSnapshot
 from boundary_probe.normalizer import normalize_from_paths
 from boundary_probe.targets import ParsedTarget
-
-_SECONDARY_TARGET = "8.8.8.8"
 
 
 @dataclass(slots=True, frozen=True)
@@ -45,6 +44,8 @@ def collect_signals(
     controls = collect_control_hosts(r)
     target = collect_target_service(parsed_target, r)
 
+    secondary_target = load_config().secondary_target
+
     if skip_path:
         path_primary = PathSlice(raw_hops=[], target=parsed_target.host, completed=False,
                                  note="skipped via --no-path")
@@ -52,7 +53,7 @@ def collect_signals(
     else:
         path_primary = collect_path(parsed_target.host, r)
         needs_secondary = not ip.ok or not controls.all_ok
-        path_secondary = collect_path(_SECONDARY_TARGET, r) if needs_secondary else None
+        path_secondary = collect_path(secondary_target, r) if needs_secondary else None
 
     path_signals = normalize_from_paths(path_primary, path_secondary)
 

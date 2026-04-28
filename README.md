@@ -92,7 +92,7 @@ docs/
 |-------|-------|--------|
 | 0 | Scaffold — rule engine, CLI stub, target parser, fixtures | Done |
 | 1 | Real collectors, path normalizer, SQLite persistence | Done |
-| 2 | Rich signal facts, rule calibration, config file | Planned |
+| 2 | Rich signal facts, config file, collector details output | Done |
 | 3 | Local web UI | Planned |
 | 4 | Escalation output (clipboard + .txt) | Planned |
 | 5 | Hardening and calibration | Planned |

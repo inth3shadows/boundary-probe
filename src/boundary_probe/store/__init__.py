@@ -204,3 +204,9 @@ def fetch_recent(conn: sqlite3.Connection, limit: int) -> list[sqlite3.Row]:
     return conn.execute(
         "SELECT * FROM runs ORDER BY started_at DESC, id DESC LIMIT ?", (limit,)
     ).fetchall()
+
+
+def fetch_run(conn: sqlite3.Connection, run_uuid: str) -> sqlite3.Row | None:
+    return conn.execute(
+        "SELECT * FROM runs WHERE run_uuid = ?", (run_uuid,)
+    ).fetchone()

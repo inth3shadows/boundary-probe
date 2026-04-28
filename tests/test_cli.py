@@ -68,6 +68,27 @@ def test_diagnose_json_output(monkeypatch, tmp_db, fake_collection_result):
     data = json.loads(output)
     assert data["boundary"] == "remote-service"
     assert "run_uuid" in data
+    assert "collector_facts" in data
+    facts = data["collector_facts"]
+    assert facts["gateway_ip"] == "192.168.1.1"
+    assert facts["controls_ok"] == 4
+    assert facts["controls_total"] == 4
+
+
+def test_diagnose_collector_details_in_text_output(monkeypatch, tmp_db, fake_collection_result):
+    monkeypatch.setattr("boundary_probe.cli.collect_signals", lambda *a, **kw: fake_collection_result)
+    output = _run(["diagnose", "example.com"])
+    assert "Collector details:" in output
+    assert "Gateway:" in output
+    assert "Controls:" in output
+
+
+def test_config_subcommand_runs():
+    output = _run(["config"])
+    assert "Config file:" in output
+    assert "[probes]" in output
+    assert "[timeouts]" in output
+    assert "control_hosts" in output
 
 
 def test_history_empty_db_prints_message(tmp_db):
@@ -145,3 +166,54 @@ def test_capture_writes_fixture(monkeypatch, tmp_db, fake_collection_result, tmp
     data = json.loads(fixture_file.read_text(encoding="utf-8"))
     assert data["scenario"] == "test-capture"
     assert "gateway_reachable" in data
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 tests — escalate subcommand
+# ---------------------------------------------------------------------------
+
+
+def _seed_run(monkeypatch, tmp_db, fake_collection_result) -> str:
+    """Seed one run; return its uuid."""
+    from boundary_probe.engine import diagnose
+    from boundary_probe.store import connect, insert_run
+    from boundary_probe.targets import parse_target
+
+    monkeypatch.setattr("boundary_probe.cli.collect_signals", lambda *a, **kw: fake_collection_result)
+    _run(["diagnose", "example.com"])
+    with connect() as conn:
+        rows = conn.execute("SELECT run_uuid FROM runs").fetchall()
+    return rows[0]["run_uuid"]
+
+
+def test_escalate_prints_report(monkeypatch, tmp_db, fake_collection_result):
+    uuid = _seed_run(monkeypatch, tmp_db, fake_collection_result)
+    output = _run(["escalate", uuid, "--no-file"])
+    assert "DIAGNOSIS" in output
+    assert uuid in output
+
+
+def test_escalate_writes_file(monkeypatch, tmp_db, fake_collection_result, tmp_path):
+    import os
+    uuid = _seed_run(monkeypatch, tmp_db, fake_collection_result)
+    out_file = tmp_path / "report.txt"
+    _run(["escalate", uuid, "--output", str(out_file)])
+    assert out_file.exists()
+    content = out_file.read_text(encoding="utf-8")
+    assert "DIAGNOSIS" in content
+    assert uuid in content
+
+
+def test_escalate_missing_uuid(tmp_db, capsys):
+    with pytest.raises(SystemExit) as exc:
+        main(["escalate", "doesnotexist"])
+    assert exc.value.code == 2
+
+
+def test_escalate_help():
+    buf = StringIO()
+    with pytest.raises(SystemExit) as exc:
+        with redirect_stdout(buf):
+            main(["escalate", "--help"])
+    assert exc.value.code == 0
+    assert "--copy" in buf.getvalue()

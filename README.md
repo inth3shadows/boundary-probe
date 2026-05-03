@@ -1,8 +1,18 @@
 # Boundary Probe
 
-`boundary-probe` is a Windows-first CLI tool for deterministic network boundary diagnosis. It runs a targeted set of probes, classifies the most likely failure boundary with a confidence score, and gives the operator specific remediation steps — not generic advice.
+[![CI](https://github.com/inth3shadows/boundary-probe/actions/workflows/ci.yml/badge.svg)](https://github.com/inth3shadows/boundary-probe/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey)]()
+
+`boundary-probe` is a CLI tool for deterministic network boundary diagnosis. It runs a targeted set of probes, classifies the most likely failure boundary with a confidence score, and gives the operator specific remediation steps — not generic advice.
 
 The five boundaries it answers: **local device / LAN**, **router-gateway**, **DNS**, **ISP upstream path**, and **remote service**. Every result is backed by evidence collected in the same run and stored locally in SQLite for history review.
+
+## Demo
+
+<!-- TODO: record with `asciinema rec demo.cast`, convert with `agg demo.cast demo.gif` -->
+> Demo GIF coming soon. To try it yourself: `pip install boundary-probe` then `boundary-probe diagnose 8.8.8.8`
 
 ## How It Works
 
@@ -12,22 +22,35 @@ The rule engine is intentionally deterministic: same signals → same result, ev
 
 ## Prerequisites
 
-- Windows 10 or 11 (64-bit)
+**Windows 10/11:**
 - Python 3.11 or newer
-- `ping.exe` and `tracert.exe` on PATH (standard on all supported Windows versions)
-- No additional runtime dependencies — stdlib only
+- `ping.exe`, `tracert.exe`, and `route.exe` on PATH (standard on all supported Windows versions)
+
+**Linux (Ubuntu 20.04+, Debian, Fedora, Arch):**
+- Python 3.11 or newer
+- `ping`, `traceroute`, and `ip` (iproute2) — install with `sudo apt install traceroute iputils-ping iproute2`
+
+No additional runtime dependencies — stdlib only.
 
 ## Quick Start
 
+**Windows (PowerShell):**
 ```powershell
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -e .[dev]
 ```
 
+**Linux:**
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -e .[dev]
+```
+
 Diagnose a target:
 
-```powershell
+```bash
 boundary-probe diagnose example.com
 boundary-probe diagnose https://app.example.com
 boundary-probe diagnose 1.1.1.1
@@ -35,25 +58,25 @@ boundary-probe diagnose 1.1.1.1
 
 Skip the traceroute for a faster result:
 
-```powershell
+```bash
 boundary-probe diagnose example.com --no-path
 ```
 
 View recent run history:
 
-```powershell
+```bash
 boundary-probe diagnose --history 10
 ```
 
 Capture a fixture from a live run (for testing or sharing):
 
-```powershell
+```bash
 boundary-probe capture my-snapshot --target example.com
 ```
 
 Run tests:
 
-```powershell
+```bash
 pytest
 pytest -m integration   # requires live network
 ```
@@ -93,9 +116,10 @@ docs/
 | 0 | Scaffold — rule engine, CLI stub, target parser, fixtures | Done |
 | 1 | Real collectors, path normalizer, SQLite persistence | Done |
 | 2 | Rich signal facts, config file, collector details output | Done |
-| 3 | Local web UI | Planned |
-| 4 | Escalation output (clipboard + .txt) | Planned |
-| 5 | Hardening and calibration | Planned |
+| 3 | Local web UI | Done |
+| 4 | Escalation output (clipboard + .txt) | Done |
+| 5 | Hardening and calibration | Done |
+| 6 | Linux support, CI, PyPI packaging | Done |
 
 ## Related Documentation
 

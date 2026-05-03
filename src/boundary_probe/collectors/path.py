@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
+from boundary_probe.collectors._commands import traceroute_cmd
 from boundary_probe.collectors._parsers import parse_tracert_output
 from boundary_probe.collectors._runner import DefaultRunner, SubprocessRunner
 from boundary_probe.config import load_config
@@ -26,7 +27,7 @@ def collect_path(
     r = runner or DefaultRunner()
     _timeout = timeout_s if timeout_s is not None else cfg.tracert_s
 
-    result = r.run(["tracert", "-4", "-h", "10", "-w", "500", target_host], timeout_s=_timeout)
+    result = r.run(traceroute_cmd(target_host, 10, 500), timeout_s=_timeout)
 
     if result.timed_out:
         return PathSlice(raw_hops=[], target=target_host, completed=False,

@@ -1,0 +1,64 @@
+from __future__ import annotations
+
+import subprocess
+import sys
+from unittest.mock import MagicMock, patch
+
+from boundary_probe.collectors._runner import DefaultRunner
+
+
+def _make_proc(stdout: bytes = b"out", stderr: bytes = b"err", returncode: int = 0):
+    proc = MagicMock()
+    proc.stdout = stdout
+    proc.stderr = stderr
+    proc.returncode = returncode
+    return proc
+
+
+def test_successful_run_returns_decoded_output():
+    encoding = "cp437" if sys.platform == "win32" else "utf-8"
+    proc = _make_proc(stdout="hello".encode(encoding), stderr="".encode(encoding))
+    with patch("subprocess.run", return_value=proc) as mock_run:
+        result = DefaultRunner().run(["echo", "hello"], timeout_s=5.0)
+    assert result.stdout == "hello"
+    assert result.stderr == ""
+    assert result.returncode == 0
+    assert not result.timed_out
+    mock_run.assert_called_once()
+
+
+def test_timeout_returns_empty_strings():
+    with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd=["ping"], timeout=1)):
+        result = DefaultRunner().run(["ping", "1.1.1.1"], timeout_s=1.0)
+    assert result.stdout == ""
+    assert result.stderr == ""
+    assert result.returncode == -1
+    assert result.timed_out
+
+
+def test_file_not_found_returns_empty_strings():
+    with patch("subprocess.run", side_effect=FileNotFoundError("not found")):
+        result = DefaultRunner().run(["tracert", "1.1.1.1"], timeout_s=5.0)
+    assert result.stdout == ""
+    assert result.stderr == ""
+    assert result.returncode == -1
+    assert not result.timed_out
+
+
+def test_duration_ms_is_non_negative():
+    proc = _make_proc()
+    with patch("subprocess.run", return_value=proc):
+        result = DefaultRunner().run(["cmd"], timeout_s=5.0)
+    assert result.duration_ms >= 0
+
+
+def test_creationflags_on_windows_only():
+    """CREATE_NO_WINDOW is passed as creationflags on Windows; 0 on Linux."""
+    proc = _make_proc()
+    with patch("subprocess.run", return_value=proc) as mock_run:
+        DefaultRunner().run(["cmd"], timeout_s=5.0)
+    _, kwargs = mock_run.call_args
+    if sys.platform == "win32":
+        assert kwargs.get("creationflags", 0) != 0
+    else:
+        assert kwargs.get("creationflags", 0) == 0

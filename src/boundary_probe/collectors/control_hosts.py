@@ -3,6 +3,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 
+from boundary_probe.collectors._commands import ping_cmd
 from boundary_probe.collectors._parsers import parse_ping_output
 from boundary_probe.collectors._runner import DefaultRunner, SubprocessRunner
 from boundary_probe.config import load_config
@@ -31,7 +32,7 @@ def _probe_one(
     loss_pct_threshold: float,
     timeout_s: float,
 ) -> ControlHostResult:
-    result = runner.run(["ping", "-4", "-n", "10", "-w", "1000", host], timeout_s=timeout_s)
+    result = runner.run(ping_cmd(host, 10, 1000), timeout_s=timeout_s)
     if result.timed_out:
         return ControlHostResult(host=host, reachable=False, loss_pct=100.0, avg_rtt_ms=None)
     stats = parse_ping_output(result.stdout)

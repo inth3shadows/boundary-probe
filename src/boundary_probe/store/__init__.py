@@ -9,6 +9,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from boundary_probe.config import get_data_dir
 from boundary_probe.models import Diagnosis, SignalSnapshot
 from boundary_probe.targets import ParsedTarget
 
@@ -76,11 +77,7 @@ def get_db_path() -> Path:
     override = os.environ.get("BOUNDARY_PROBE_DB")
     if override:
         return Path(override)
-    local_app_data = os.environ.get(
-        "LOCALAPPDATA",
-        str(Path.home() / "AppData" / "Local"),
-    )
-    return Path(local_app_data) / "boundary-probe" / "runs.db"
+    return get_data_dir() / "runs.db"
 
 
 def _ensure_schema(conn: sqlite3.Connection) -> None:

@@ -4,6 +4,7 @@ import socket
 import time
 from dataclasses import dataclass
 
+from boundary_probe.collectors._commands import ping_cmd
 from boundary_probe.collectors._parsers import parse_ping_output
 from boundary_probe.collectors._runner import DefaultRunner, SubprocessRunner
 from boundary_probe.targets import ParsedTarget
@@ -51,7 +52,7 @@ def _tcp_connect(host: str, port: int) -> TargetServiceSlice:
 
 def _ping_host(host: str, runner: SubprocessRunner) -> TargetServiceSlice:
     t0 = time.monotonic()
-    result = runner.run(["ping", "-4", "-n", "4", "-w", "1000", host], timeout_s=8.0)
+    result = runner.run(ping_cmd(host, 4, 1000), timeout_s=8.0)
     elapsed_ms = int((time.monotonic() - t0) * 1000)
 
     if result.timed_out:

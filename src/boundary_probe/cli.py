@@ -2,16 +2,37 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 from dataclasses import asdict
 from pathlib import Path
 
 from boundary_probe.collectors import collect_signals
 from boundary_probe.collectors.orchestrator import CollectionResult
-from boundary_probe.config import ProbeConfig, get_config_path, load_config
+from boundary_probe.config import get_config_path, load_config
 from boundary_probe.engine import diagnose
 from boundary_probe.store import connect, fetch_recent, fetch_run, insert_run
 from boundary_probe.targets import parse_target
+
+
+_PLATFORM: str = sys.platform
+_WIN: bool = _PLATFORM == "win32"
+
+
+def _copy_to_clipboard(text: str) -> bool:
+    """Copy text to the system clipboard. Returns True on success."""
+    if _WIN:
+        cmds: tuple[list[str], ...] = (["clip"],)
+    else:
+        cmds = (["xclip", "-selection", "clipboard"], ["xsel", "--clipboard", "--input"])
+    for cmd in cmds:
+        try:
+            r = subprocess.run(cmd, input=text.encode("utf-8"), capture_output=True, timeout=3)
+            if r.returncode == 0:
+                return True
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            continue
+    return False
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -197,7 +218,7 @@ def _print_diagnose(target: str, as_json: bool, history: int | None, skip_path: 
     try:
         result = collect_signals(parsed, skip_path=skip_path)
     except FileNotFoundError as exc:
-        print(f"error: required Windows tool not found ({exc}).", file=sys.stderr)
+        print(f"error: required network tool not found ({exc}).", file=sys.stderr)
         sys.exit(3)
 
     diagnosis = diagnose(result.snapshot)
@@ -238,8 +259,6 @@ def _print_diagnose(target: str, as_json: bool, history: int | None, skip_path: 
 
 
 def _escalate(run_uuid: str, copy: bool, output: str | None, no_file: bool) -> None:
-    import subprocess
-
     from boundary_probe.templates import render_escalation
 
     with connect() as conn:
@@ -257,11 +276,10 @@ def _escalate(run_uuid: str, copy: bool, output: str | None, no_file: bool) -> N
         print(f"Saved: {out_path}")
 
     if copy:
-        try:
-            subprocess.run(["clip"], input=text.encode("utf-8"), check=False)
+        if _copy_to_clipboard(text):
             print("Copied to clipboard.")
-        except FileNotFoundError:
-            print("warning: clip.exe not found; clipboard copy skipped.", file=sys.stderr)
+        else:
+            print("warning: clipboard tool not found; copy skipped.", file=sys.stderr)
 
 
 def _print_capture(name: str, target: str, skip_path: bool) -> None:
@@ -274,7 +292,7 @@ def _print_capture(name: str, target: str, skip_path: bool) -> None:
     try:
         result = collect_signals(parsed, skip_path=skip_path)
     except FileNotFoundError as exc:
-        print(f"error: required Windows tool not found ({exc}).", file=sys.stderr)
+        print(f"error: required network tool not found ({exc}).", file=sys.stderr)
         sys.exit(3)
 
     snap = result.snapshot

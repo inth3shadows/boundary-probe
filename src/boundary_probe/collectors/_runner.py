@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 import time
 from dataclasses import dataclass
 from typing import Protocol
 
+# Windows-only flag; getattr returns 0 on Linux (0 is safe to pass as creationflags)
 _CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+_ENCODING = "cp437" if sys.platform == "win32" else "utf-8"
 
 
 @dataclass(slots=True, frozen=True)
@@ -22,7 +25,7 @@ class SubprocessRunner(Protocol):
 
 
 class DefaultRunner:
-    """Production runner. shell=False always. cp437 decode for Windows console output."""
+    """Production runner. shell=False always. Platform-appropriate output encoding."""
 
     def run(self, argv: list[str], timeout_s: float) -> CommandResult:
         t0 = time.monotonic()
@@ -37,8 +40,8 @@ class DefaultRunner:
             elapsed_ms = int((time.monotonic() - t0) * 1000)
             return CommandResult(
                 returncode=proc.returncode,
-                stdout=proc.stdout.decode("cp437", errors="replace"),
-                stderr=proc.stderr.decode("cp437", errors="replace"),
+                stdout=proc.stdout.decode(_ENCODING, errors="replace"),
+                stderr=proc.stderr.decode(_ENCODING, errors="replace"),
                 timed_out=False,
                 duration_ms=elapsed_ms,
             )
@@ -49,5 +52,14 @@ class DefaultRunner:
                 stdout="",
                 stderr="",
                 timed_out=True,
+                duration_ms=elapsed_ms,
+            )
+        except FileNotFoundError:
+            elapsed_ms = int((time.monotonic() - t0) * 1000)
+            return CommandResult(
+                returncode=-1,
+                stdout="",
+                stderr="",
+                timed_out=False,
                 duration_ms=elapsed_ms,
             )

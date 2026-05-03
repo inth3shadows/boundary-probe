@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from boundary_probe.collectors._commands import ping_cmd
 from boundary_probe.collectors._parsers import parse_ping_output
 from boundary_probe.collectors._runner import DefaultRunner, SubprocessRunner
 from boundary_probe.config import load_config
@@ -30,7 +31,7 @@ def collect_ip_connectivity(
     _loss_pct = loss_pct_threshold if loss_pct_threshold is not None else cfg.ip_loss_pct
     _timeout = timeout_s if timeout_s is not None else cfg.ip_connectivity_s
 
-    result = r.run(["ping", "-4", "-n", "10", "-w", "1000", _canary], timeout_s=_timeout)
+    result = r.run(ping_cmd(_canary, 10, 1000), timeout_s=_timeout)
 
     if result.timed_out:
         return IpConnectivitySlice(ok=False, target_ip=_canary, loss_pct=100.0,

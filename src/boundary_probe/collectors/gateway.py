@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from boundary_probe.collectors._commands import ping_cmd, route_cmd
 from boundary_probe.collectors._parsers import (
     parse_ping_output,
     parse_route_print_default_gateway,
@@ -32,7 +33,7 @@ def collect_gateway(
     _ping_t = ping_timeout_s if ping_timeout_s is not None else cfg.gateway_ping_s
     _min_replies = min_replies if min_replies is not None else cfg.gateway_min_replies
 
-    route_result = r.run(["route", "print", "-4"], timeout_s=_route_t)
+    route_result = r.run(route_cmd(), timeout_s=_route_t)
     if route_result.timed_out or route_result.returncode != 0:
         return GatewaySlice(reachable=False, gateway_ip=None, rtt_ms=None,
                             note="route print failed or timed out")
@@ -42,7 +43,7 @@ def collect_gateway(
         return GatewaySlice(reachable=False, gateway_ip=None, rtt_ms=None,
                             note="could not determine default gateway from route table")
 
-    ping_result = r.run(["ping", "-4", "-n", "4", "-w", "1000", gateway_ip], timeout_s=_ping_t)
+    ping_result = r.run(ping_cmd(gateway_ip, 4, 1000), timeout_s=_ping_t)
     if ping_result.timed_out:
         return GatewaySlice(reachable=False, gateway_ip=gateway_ip, rtt_ms=None,
                             note=f"ping to {gateway_ip} timed out after {_ping_t:.0f}s")

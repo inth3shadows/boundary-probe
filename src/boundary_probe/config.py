@@ -71,16 +71,25 @@ def _validate(cfg: ProbeConfig) -> None:
         sys.exit(1)
 
 
+_PLATFORM: str = sys.platform
+_WIN: bool = _PLATFORM == "win32"
+
+
+def get_data_dir() -> Path:
+    """Return the platform-appropriate app data directory."""
+    if _WIN:
+        base = os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData" / "Local"))
+    else:
+        base = os.environ.get("XDG_DATA_HOME", str(Path.home() / ".local" / "share"))
+    return Path(base) / "boundary-probe"
+
+
 def get_config_path() -> Path:
-    """Return the config file path (env override or default LOCALAPPDATA location)."""
+    """Return the config file path (env override or default platform location)."""
     override = os.environ.get("BOUNDARY_PROBE_CONFIG")
     if override:
         return Path(override)
-    local_app_data = os.environ.get(
-        "LOCALAPPDATA",
-        str(Path.home() / "AppData" / "Local"),
-    )
-    return Path(local_app_data) / "boundary-probe" / "config.toml"
+    return get_data_dir() / "config.toml"
 
 
 def load_config() -> ProbeConfig:

@@ -10,7 +10,7 @@ from boundary_probe.collectors.gateway import collect_gateway
 from boundary_probe.collectors.ip_connectivity import collect_ip_connectivity
 from boundary_probe.collectors.path import collect_path
 from boundary_probe.collectors.target_service import collect_target_service
-from boundary_probe.targets import ParsedTarget
+from boundary_probe.targets import ParsedTarget, parse_target
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -227,3 +227,43 @@ def test_path_isp_loss():
     result = collect_path("example.com", runner)
     assert result.completed is True
     assert any(h["loss_pct"] == 100.0 for h in result.raw_hops)
+
+
+# ---------------------------------------------------------------------------
+# collect_target_service (TCP connect path)
+# ---------------------------------------------------------------------------
+
+
+def test_target_service_https_uses_port_443():
+    from unittest.mock import MagicMock, patch
+    target = parse_target("https://example.com")
+    mock_sock = MagicMock()
+    mock_sock.__enter__ = MagicMock(return_value=mock_sock)
+    mock_sock.__exit__ = MagicMock(return_value=False)
+    with patch("socket.create_connection", return_value=mock_sock):
+        result = collect_target_service(target)
+    assert result.ok is True
+    assert result.method == "tcp-connect"
+    assert result.target_port == 443
+
+
+def test_target_service_explicit_port_tcp_connect():
+    from unittest.mock import MagicMock, patch
+    target = parse_target("192.168.1.1:8080")
+    mock_sock = MagicMock()
+    mock_sock.__enter__ = MagicMock(return_value=mock_sock)
+    mock_sock.__exit__ = MagicMock(return_value=False)
+    with patch("socket.create_connection", return_value=mock_sock):
+        result = collect_target_service(target)
+    assert result.ok is True
+    assert result.target_port == 8080
+
+
+def test_target_service_tcp_connect_refused():
+    from unittest.mock import patch
+    target = parse_target("https://example.com")
+    with patch("socket.create_connection", side_effect=OSError("Connection refused")):
+        result = collect_target_service(target)
+    assert result.ok is False
+    assert "Connection refused" in result.note
+    assert result.method == "tcp-connect"

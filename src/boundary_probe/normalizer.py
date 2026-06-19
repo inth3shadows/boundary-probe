@@ -22,7 +22,7 @@ from boundary_probe.config import load_config
 if TYPE_CHECKING:
     from boundary_probe.collectors.path import PathSlice
 
-_LOSS_THRESHOLD_PCT = 20.0  # module-level default; overridden by config at runtime
+_LOSS_THRESHOLD_PCT = 20.0  # fallback used only when config is unavailable
 
 
 @dataclass(slots=True)
@@ -54,11 +54,12 @@ def normalize_path_signals(
         host = hop.get("host", "")
         if ":" in host:
             try:
-                if isinstance(ipaddress.ip_address(host), ipaddress.IPv6Address):
+                addr = ipaddress.ip_address(host)
+            except ValueError:
+                pass  # not a valid IP literal (e.g. a hostname with a colon) — ignore
+            else:
+                if isinstance(addr, ipaddress.IPv6Address):
                     raise ValueError(f"IPv6 hop in trace; collector should have rejected this: {host!r}")
-            except ValueError as exc:
-                if "IPv6 hop" in str(exc):
-                    raise
 
     primary_loss = _has_persistent_loss(raw_hops, threshold)
 

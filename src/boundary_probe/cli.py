@@ -11,6 +11,7 @@ from boundary_probe.collectors import collect_signals
 from boundary_probe.collectors.orchestrator import CollectionResult
 from boundary_probe.config import get_config_path, load_config
 from boundary_probe.engine import diagnose
+from boundary_probe.models import SignalSnapshot
 from boundary_probe.store import connect, fetch_recent, fetch_run, insert_run
 from boundary_probe.targets import parse_target
 
@@ -311,10 +312,8 @@ def _print_capture(name: str, target: str, skip_path: bool) -> None:
     fixture_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
     # Round-trip validation
-    import json as _json
-    data = _json.loads(fixture_path.read_text(encoding="utf-8"))
+    data = json.loads(fixture_path.read_text(encoding="utf-8"))
     data.pop("scenario", None)
-    from boundary_probe.models import SignalSnapshot
     reloaded = SignalSnapshot(**data)
     if reloaded != snap:
         fixture_path.unlink(missing_ok=True)

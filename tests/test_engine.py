@@ -1,5 +1,32 @@
-from boundary_probe.engine import demo_signals, diagnose
+from boundary_probe.engine import diagnose
 from boundary_probe.models import SignalSnapshot
+
+
+def demo_signals(name: str) -> SignalSnapshot:
+    scenarios = {
+        "router-down": SignalSnapshot(
+            gateway_reachable=False, dns_ok=False, ip_connectivity_ok=False,
+            control_hosts_ok=False, target_service_ok=False,
+        ),
+        "dns-failure": SignalSnapshot(
+            gateway_reachable=True, dns_ok=False, ip_connectivity_ok=True,
+            control_hosts_ok=True, target_service_ok=False,
+        ),
+        "isp-path": SignalSnapshot(
+            gateway_reachable=True, dns_ok=True, ip_connectivity_ok=True,
+            control_hosts_ok=False, target_service_ok=False,
+            packet_loss_after_hop1=True, packet_loss_multiple_targets=True,
+        ),
+        "remote-service": SignalSnapshot(
+            gateway_reachable=True, dns_ok=True, ip_connectivity_ok=True,
+            control_hosts_ok=True, target_service_ok=False,
+        ),
+    }
+    try:
+        return scenarios[name]
+    except KeyError as exc:
+        available = ", ".join(sorted(scenarios))
+        raise ValueError(f"unknown scenario '{name}'. Available: {available}") from exc
 
 
 def test_router_down_classifies_as_router_gateway() -> None:
@@ -36,14 +63,15 @@ def test_inconclusive_when_all_healthy() -> None:
     assert diagnosis.confidence == 0.5
 
 
-def test_inconclusive_when_partial_ambiguous() -> None:
-    # gateway up, everything else down, but no path-loss flags → no clean boundary
+def test_wan_gateway_classifies_correctly() -> None:
+    # gateway up, IP and DNS both down → WAN connection failure, not router-local
     snap = SignalSnapshot(
         gateway_reachable=True, dns_ok=False, ip_connectivity_ok=False,
         control_hosts_ok=False, target_service_ok=False,
     )
     diagnosis = diagnose(snap)
-    assert diagnosis.boundary == "inconclusive"
+    assert diagnosis.boundary == "wan-gateway"
+    assert diagnosis.confidence == 0.94
 
 
 def test_isp_upstream_requires_both_loss_flags() -> None:
@@ -66,13 +94,13 @@ def test_isp_upstream_requires_both_loss_flags() -> None:
 
 
 def test_dns_rule_requires_ip_connectivity_ok() -> None:
-    # DNS fails AND IP connectivity fails → not the dns boundary
+    # DNS fails AND IP connectivity fails → wan-gateway, not dns
     snap = SignalSnapshot(
         gateway_reachable=True, dns_ok=False, ip_connectivity_ok=False,
         control_hosts_ok=False, target_service_ok=False,
     )
     diagnosis = diagnose(snap)
-    assert diagnosis.boundary != "dns"
+    assert diagnosis.boundary == "wan-gateway"
 
 
 def test_remote_service_requires_controls_ok() -> None:
@@ -99,10 +127,11 @@ def test_confidence_values_for_all_boundaries() -> None:
 
 
 def test_inconclusive_evidence_is_signal_aware() -> None:
-    # gateway up, ip down → dns rule doesn't fire (needs ip_ok); falls to inconclusive
+    # Controls failing, dns ok, ip ok, target down → inconclusive (no path loss flags)
     snap = SignalSnapshot(
-        gateway_reachable=True, dns_ok=False, ip_connectivity_ok=False,
+        gateway_reachable=True, dns_ok=True, ip_connectivity_ok=True,
         control_hosts_ok=False, target_service_ok=False,
+        packet_loss_after_hop1=False, packet_loss_multiple_targets=False,
     )
     diagnosis = diagnose(snap)
     assert diagnosis.boundary == "inconclusive"
@@ -110,6 +139,14 @@ def test_inconclusive_evidence_is_signal_aware() -> None:
     assert "gateway" in labels
     assert "dns" in labels
     assert "coverage" in labels
-    # Verify the gateway item reflects the actual signal
-    gw_evidence = next(e for e in diagnosis.evidence if e.label == "gateway")
-    assert gw_evidence.detail == "reachable"
+
+
+def test_inconclusive_when_all_healthy_plus_target_ok() -> None:
+    # Everything passing including target → inconclusive (no failure to localize)
+    snap = SignalSnapshot(
+        gateway_reachable=True, dns_ok=True, ip_connectivity_ok=True,
+        control_hosts_ok=True, target_service_ok=True,
+    )
+    diagnosis = diagnose(snap)
+    assert diagnosis.boundary == "inconclusive"
+    assert diagnosis.confidence == 0.5

@@ -324,3 +324,18 @@ def test_target_service_tcp_connect_refused():
     assert result.ok is False
     assert "Connection refused" in result.note
     assert result.method == "tcp-connect"
+
+
+def test_target_service_ping_respects_loss_threshold():
+    # A custom loss threshold of 10% should mark 33% loss as failed,
+    # whereas the old hardcoded 50% would have marked it ok.
+    runner = FakeRunner({tuple(ping_cmd("example.com", 4, 1000)): _ok(_PING_PARTIAL_LOSS)})
+    result = collect_target_service(_host_target("example.com"), runner, loss_pct_threshold=10.0)
+    assert result.ok is False
+
+
+def test_target_service_ping_respects_timeout():
+    runner = FakeRunner({tuple(ping_cmd("example.com", 4, 1000)): _timeout()})
+    result = collect_target_service(_host_target("example.com"), runner, timeout_s=3.0)
+    assert result.ok is False
+    assert "3s" in result.note

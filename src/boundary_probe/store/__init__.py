@@ -4,6 +4,7 @@ import datetime
 import json
 import os
 import sqlite3
+import sys
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
@@ -85,6 +86,12 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
     conn.commit()
     row = conn.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()
     if row is None or row[0] != SCHEMA_VERSION:
+        if row is not None:
+            print(
+                f"warning: boundary-probe database schema changed "
+                f"(v{row[0]} → v{SCHEMA_VERSION}); prior run history will be cleared.",
+                file=sys.stderr,
+            )
         conn.execute("DROP TABLE IF EXISTS runs")
         conn.execute("DROP TABLE IF EXISTS schema_meta")
         conn.executescript(_DDL)

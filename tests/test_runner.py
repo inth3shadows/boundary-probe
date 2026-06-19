@@ -4,6 +4,8 @@ import subprocess
 import sys
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from boundary_probe.collectors._runner import DefaultRunner
 
 
@@ -36,13 +38,10 @@ def test_timeout_returns_empty_strings():
     assert result.timed_out
 
 
-def test_file_not_found_returns_empty_strings():
+def test_file_not_found_propagates():
     with patch("subprocess.run", side_effect=FileNotFoundError("not found")):
-        result = DefaultRunner().run(["tracert", "1.1.1.1"], timeout_s=5.0)
-    assert result.stdout == ""
-    assert result.stderr == ""
-    assert result.returncode == -1
-    assert not result.timed_out
+        with pytest.raises(FileNotFoundError):
+            DefaultRunner().run(["tracert", "1.1.1.1"], timeout_s=5.0)
 
 
 def test_duration_ms_is_non_negative():

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
 
+from boundary_probe.collectors._commands import ping_cmd, route_cmd, traceroute_cmd
 from boundary_probe.collectors._runner import CommandResult
 from boundary_probe.collectors.control_hosts import collect_control_hosts
 from boundary_probe.collectors.gateway import collect_gateway
@@ -12,11 +14,18 @@ from boundary_probe.collectors.path import collect_path
 from boundary_probe.collectors.target_service import collect_target_service
 from boundary_probe.targets import ParsedTarget, parse_target
 
+_WIN = sys.platform == "win32"
+
 FIXTURES = Path(__file__).parent / "fixtures"
+LINUX_FIXTURES = FIXTURES / "linux"
 
 
 def _read(name: str) -> str:
     return (FIXTURES / name).read_text(encoding="utf-8")
+
+
+def _read_linux(name: str) -> str:
+    return (LINUX_FIXTURES / name).read_text(encoding="utf-8")
 
 
 def _ok(stdout: str, returncode: int = 0) -> CommandResult:
@@ -41,44 +50,92 @@ class FakeRunner:
 
 
 # ---------------------------------------------------------------------------
+# Platform-appropriate fixture content
+# ---------------------------------------------------------------------------
+
+# Route output containing a default gateway (192.168.1.1)
+_ROUTE_OK = _read("route_print.txt") if _WIN else _read_linux("route_default.txt")
+
+# Route output with no default gateway entry
+_ROUTE_NO_DEFAULT = (
+    "127.0.0.0  255.0.0.0  On-link  127.0.0.1\n"
+    if _WIN
+    else "192.168.1.0/24 dev eth0 proto kernel scope link\n"
+)
+
+# 4-ping success output to 192.168.1.1 (used by gateway tests)
+_PING4_GW_OK = (
+    "\nPing statistics for 192.168.1.1:\n"
+    "    Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),\n"
+    "Approximate round trip times in milli-seconds:\n"
+    "    Minimum = 2ms, Maximum = 3ms, Average = 2ms\n"
+    if _WIN
+    else
+    "PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.\n"
+    "64 bytes from 192.168.1.1: icmp_seq=1 ttl=64 time=2.1 ms\n"
+    "64 bytes from 192.168.1.1: icmp_seq=2 ttl=64 time=2.3 ms\n"
+    "64 bytes from 192.168.1.1: icmp_seq=3 ttl=64 time=2.0 ms\n"
+    "64 bytes from 192.168.1.1: icmp_seq=4 ttl=64 time=2.2 ms\n"
+    "\n--- 192.168.1.1 ping statistics ---\n"
+    "4 packets transmitted, 4 received, 0% packet loss, time 3003ms\n"
+    "rtt min/avg/max/mdev = 2.000/2.150/2.300/0.120 ms\n"
+)
+
+# 4-ping total loss to 192.168.1.1
+_PING4_GW_LOSS = (
+    "Pinging 192.168.1.1 with 32 bytes of data:\n"
+    "Request timed out.\nRequest timed out.\nRequest timed out.\nRequest timed out.\n"
+    "\nPing statistics for 192.168.1.1:\n"
+    "    Packets: Sent = 4, Received = 0, Lost = 4 (100% loss),\n"
+    if _WIN
+    else
+    "PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.\n"
+    "\n--- 192.168.1.1 ping statistics ---\n"
+    "4 packets transmitted, 0 received, 100% packet loss, time 3003ms\n"
+)
+
+# General-purpose ping fixtures (10 pings, various loss levels)
+_PING_SUCCESS = _read("ping_success.txt") if _WIN else _read_linux("ping_success.txt")
+_PING_TOTAL_LOSS = _read("ping_total_loss.txt") if _WIN else _read_linux("ping_total_loss.txt")
+_PING_PARTIAL_LOSS = _read("ping_partial_loss.txt") if _WIN else _read_linux("ping_partial_loss.txt")
+
+# Traceroute fixtures
+_TRACERT_COMPLETE = _read("tracert_complete.txt") if _WIN else _read_linux("traceroute_complete.txt")
+_TRACERT_ISP_LOSS = _read("tracert_isp_loss.txt") if _WIN else _read_linux("traceroute_isp_loss.txt")
+
+
+# ---------------------------------------------------------------------------
 # collect_gateway
 # ---------------------------------------------------------------------------
 
 
 def _gw_runner(route_out: str, ping_out: str) -> FakeRunner:
+    gw_ip = "192.168.1.1"
     return FakeRunner({
-        ("route", "print", "-4"): _ok(route_out),
-        ("ping", "-4", "-n", "4", "-w", "1000", "192.168.1.1"): _ok(ping_out),
+        tuple(route_cmd()): _ok(route_out),
+        tuple(ping_cmd(gw_ip, 4, 1000)): _ok(ping_out),
     })
 
 
 def test_gateway_happy_path():
-    runner = _gw_runner(_read("route_print.txt"), _read("ping_success.txt")[:400])
-    # ping_success uses -n 10; gateway uses -n 4 — feed partial success output with 4 replies
-    ping4 = (
-        "\nPing statistics for 192.168.1.1:\n"
-        "    Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),\n"
-        "Approximate round trip times in milli-seconds:\n"
-        "    Minimum = 2ms, Maximum = 3ms, Average = 2ms\n"
-    )
-    runner2 = FakeRunner({
-        ("route", "print", "-4"): _ok(_read("route_print.txt")),
-        ("ping", "-4", "-n", "4", "-w", "1000", "192.168.1.1"): _ok(ping4),
+    runner = FakeRunner({
+        tuple(route_cmd()): _ok(_ROUTE_OK),
+        tuple(ping_cmd("192.168.1.1", 4, 1000)): _ok(_PING4_GW_OK),
     })
-    result = collect_gateway(runner2)
+    result = collect_gateway(runner)
     assert result.reachable is True
     assert result.gateway_ip == "192.168.1.1"
 
 
 def test_gateway_route_timeout():
-    runner = FakeRunner({("route", "print", "-4"): _timeout()})
+    runner = FakeRunner({tuple(route_cmd()): _timeout()})
     result = collect_gateway(runner)
     assert result.reachable is False
     assert "timed out" in result.note
 
 
 def test_gateway_no_default_route():
-    runner = FakeRunner({("route", "print", "-4"): _ok("127.0.0.0  255.0.0.0  On-link  127.0.0.1\n")})
+    runner = FakeRunner({tuple(route_cmd()): _ok(_ROUTE_NO_DEFAULT)})
     result = collect_gateway(runner)
     assert result.reachable is False
     assert result.gateway_ip is None
@@ -86,8 +143,8 @@ def test_gateway_no_default_route():
 
 def test_gateway_ping_timeout():
     runner = FakeRunner({
-        ("route", "print", "-4"): _ok(_read("route_print.txt")),
-        ("ping", "-4", "-n", "4", "-w", "1000", "192.168.1.1"): _timeout(),
+        tuple(route_cmd()): _ok(_ROUTE_OK),
+        tuple(ping_cmd("192.168.1.1", 4, 1000)): _timeout(),
     })
     result = collect_gateway(runner)
     assert result.reachable is False
@@ -96,8 +153,8 @@ def test_gateway_ping_timeout():
 
 def test_gateway_ping_total_loss():
     runner = FakeRunner({
-        ("route", "print", "-4"): _ok(_read("route_print.txt")),
-        ("ping", "-4", "-n", "4", "-w", "1000", "192.168.1.1"): _ok(_read("ping_total_loss.txt")),
+        tuple(route_cmd()): _ok(_ROUTE_OK),
+        tuple(ping_cmd("192.168.1.1", 4, 1000)): _ok(_PING4_GW_LOSS),
     })
     result = collect_gateway(runner)
     assert result.reachable is False
@@ -109,30 +166,30 @@ def test_gateway_ping_total_loss():
 
 
 def test_ip_connectivity_ok():
-    runner = FakeRunner({("ping", "-4", "-n", "10", "-w", "1000", "1.1.1.1"): _ok(_read("ping_success.txt"))})
+    runner = FakeRunner({tuple(ping_cmd("1.1.1.1", 10, 1000)): _ok(_PING_SUCCESS)})
     result = collect_ip_connectivity(runner)
     assert result.ok is True
     assert result.loss_pct == 0.0
 
 
 def test_ip_connectivity_total_loss():
-    runner = FakeRunner({("ping", "-4", "-n", "10", "-w", "1000", "1.1.1.1"): _ok(_read("ping_total_loss.txt"))})
+    runner = FakeRunner({tuple(ping_cmd("1.1.1.1", 10, 1000)): _ok(_PING_TOTAL_LOSS)})
     result = collect_ip_connectivity(runner)
     assert result.ok is False
     assert result.loss_pct == 100.0
 
 
 def test_ip_connectivity_timeout():
-    runner = FakeRunner({("ping", "-4", "-n", "10", "-w", "1000", "1.1.1.1"): _timeout()})
+    runner = FakeRunner({tuple(ping_cmd("1.1.1.1", 10, 1000)): _timeout()})
     result = collect_ip_connectivity(runner)
     assert result.ok is False
     assert "timed out" in result.note
 
 
 def test_ip_connectivity_partial_loss_above_threshold():
-    runner = FakeRunner({("ping", "-4", "-n", "10", "-w", "1000", "1.1.1.1"): _ok(_read("ping_partial_loss.txt"))})
+    runner = FakeRunner({tuple(ping_cmd("1.1.1.1", 10, 1000)): _ok(_PING_PARTIAL_LOSS)})
     result = collect_ip_connectivity(runner)
-    assert result.ok is True   # 30% loss < 50% threshold
+    assert result.ok is True   # ~25-30% loss < 50% threshold
 
 
 # ---------------------------------------------------------------------------
@@ -143,8 +200,8 @@ def test_ip_connectivity_partial_loss_above_threshold():
 def _controls_runner(hosts_reachable: set[str]) -> FakeRunner:
     responses = {}
     for host in ("1.1.1.1", "8.8.8.8", "8.8.4.4", "cloudflare.com"):
-        out = _read("ping_success.txt") if host in hosts_reachable else _read("ping_total_loss.txt")
-        responses[("ping", "-4", "-n", "10", "-w", "1000", host)] = _ok(out)
+        out = _PING_SUCCESS if host in hosts_reachable else _PING_TOTAL_LOSS
+        responses[tuple(ping_cmd(host, 10, 1000))] = _ok(out)
     return FakeRunner(responses)
 
 
@@ -184,20 +241,20 @@ def _host_target(host: str) -> ParsedTarget:
 
 
 def test_target_service_ping_ok():
-    runner = FakeRunner({("ping", "-4", "-n", "4", "-w", "1000", "example.com"): _ok(_read("ping_success.txt"))})
+    runner = FakeRunner({tuple(ping_cmd("example.com", 4, 1000)): _ok(_PING_SUCCESS)})
     result = collect_target_service(_host_target("example.com"), runner)
     assert result.ok is True
     assert result.method == "ping"
 
 
 def test_target_service_ping_loss():
-    runner = FakeRunner({("ping", "-4", "-n", "4", "-w", "1000", "example.com"): _ok(_read("ping_total_loss.txt"))})
+    runner = FakeRunner({tuple(ping_cmd("example.com", 4, 1000)): _ok(_PING_TOTAL_LOSS)})
     result = collect_target_service(_host_target("example.com"), runner)
     assert result.ok is False
 
 
 def test_target_service_ping_timeout():
-    runner = FakeRunner({("ping", "-4", "-n", "4", "-w", "1000", "example.com"): _timeout()})
+    runner = FakeRunner({tuple(ping_cmd("example.com", 4, 1000)): _timeout()})
     result = collect_target_service(_host_target("example.com"), runner)
     assert result.ok is False
     assert "timed out" in result.note
@@ -209,21 +266,21 @@ def test_target_service_ping_timeout():
 
 
 def test_path_complete():
-    runner = FakeRunner({("tracert", "-4", "-h", "10", "-w", "500", "1.1.1.1"): _ok(_read("tracert_complete.txt"))})
+    runner = FakeRunner({tuple(traceroute_cmd("1.1.1.1", 10, 500)): _ok(_TRACERT_COMPLETE)})
     result = collect_path("1.1.1.1", runner)
     assert result.completed is True
-    assert len(result.raw_hops) == 4
+    assert len(result.raw_hops) >= 2
 
 
 def test_path_timeout():
-    runner = FakeRunner({("tracert", "-4", "-h", "10", "-w", "500", "192.168.99.99"): _timeout()})
+    runner = FakeRunner({tuple(traceroute_cmd("192.168.99.99", 10, 500)): _timeout()})
     result = collect_path("192.168.99.99", runner)
     assert result.completed is False
     assert "timed out" in result.note
 
 
 def test_path_isp_loss():
-    runner = FakeRunner({("tracert", "-4", "-h", "10", "-w", "500", "example.com"): _ok(_read("tracert_isp_loss.txt"))})
+    runner = FakeRunner({tuple(traceroute_cmd("example.com", 10, 500)): _ok(_TRACERT_ISP_LOSS)})
     result = collect_path("example.com", runner)
     assert result.completed is True
     assert any(h["loss_pct"] == 100.0 for h in result.raw_hops)

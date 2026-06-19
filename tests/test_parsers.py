@@ -5,6 +5,8 @@ from pathlib import Path
 import pytest
 
 from boundary_probe.collectors._parsers import (
+    _parse_ping_win,
+    _parse_route_win,
     parse_ping_output,
     parse_route_print_default_gateway,
     parse_tracert_output,
@@ -23,7 +25,9 @@ def _read(name: str) -> str:
 
 
 def test_ping_success_zero_loss():
-    stats = parse_ping_output(_read("ping_success.txt"))
+    # Call the Windows parser directly so this test is fixture-stable on all platforms.
+    # Linux-specific parsing is covered by test_parsers_linux.py.
+    stats = _parse_ping_win(_read("ping_success.txt"))
     assert stats.sent == 10
     assert stats.received == 10
     assert stats.loss_pct == 0.0
@@ -33,7 +37,7 @@ def test_ping_success_zero_loss():
 
 
 def test_ping_total_loss():
-    stats = parse_ping_output(_read("ping_total_loss.txt"))
+    stats = _parse_ping_win(_read("ping_total_loss.txt"))
     assert stats.sent == 4
     assert stats.received == 0
     assert stats.loss_pct == 100.0
@@ -41,7 +45,7 @@ def test_ping_total_loss():
 
 
 def test_ping_partial_loss():
-    stats = parse_ping_output(_read("ping_partial_loss.txt"))
+    stats = _parse_ping_win(_read("ping_partial_loss.txt"))
     assert stats.sent == 10
     assert stats.received == 7
     assert pytest.approx(stats.loss_pct) == 30.0
@@ -107,7 +111,8 @@ def test_tracert_empty():
 
 
 def test_route_print_finds_gateway():
-    gw = parse_route_print_default_gateway(_read("route_print.txt"))
+    # Call the Windows parser directly so this test is fixture-stable on all platforms.
+    gw = _parse_route_win(_read("route_print.txt"))
     assert gw == "192.168.1.1"
 
 

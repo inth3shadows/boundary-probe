@@ -16,8 +16,12 @@ _DEFAULTS = ProbeConfig()
 
 
 def test_get_config_path_default(monkeypatch, tmp_path):
+    import sys
     monkeypatch.delenv("BOUNDARY_PROBE_CONFIG", raising=False)
-    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    if sys.platform == "win32":
+        monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    else:
+        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
     path = get_config_path()
     assert path == tmp_path / "boundary-probe" / "config.toml"
 
@@ -155,13 +159,18 @@ def test_invalid_toml_warns_and_returns_defaults(monkeypatch, tmp_path, capsys):
 
 def test_control_hosts_slice_ok_count(monkeypatch, tmp_path):
     """ok_count and total are populated by the collector."""
+    import sys
     monkeypatch.setenv("BOUNDARY_PROBE_CONFIG", str(tmp_path / "nonexistent.toml"))
     from boundary_probe.collectors._runner import CommandResult
     from boundary_probe.collectors.control_hosts import collect_control_hosts
 
     FIXTURES = Path(__file__).parent / "fixtures"
-    success_out = (FIXTURES / "ping_success.txt").read_text(encoding="utf-8")
-    loss_out = (FIXTURES / "ping_total_loss.txt").read_text(encoding="utf-8")
+    if sys.platform == "win32":
+        success_out = (FIXTURES / "ping_success.txt").read_text(encoding="utf-8")
+        loss_out = (FIXTURES / "ping_total_loss.txt").read_text(encoding="utf-8")
+    else:
+        success_out = (FIXTURES / "linux" / "ping_success.txt").read_text(encoding="utf-8")
+        loss_out = (FIXTURES / "linux" / "ping_total_loss.txt").read_text(encoding="utf-8")
 
     class FakeRunner:
         def run(self, argv, timeout_s):

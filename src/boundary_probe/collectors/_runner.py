@@ -54,12 +54,6 @@ class DefaultRunner:
                 timed_out=True,
                 duration_ms=elapsed_ms,
             )
-        except FileNotFoundError:
-            elapsed_ms = int((time.monotonic() - t0) * 1000)
-            return CommandResult(
-                returncode=-1,
-                stdout="",
-                stderr="",
-                timed_out=False,
-                duration_ms=elapsed_ms,
-            )
+        # FileNotFoundError is intentionally not caught here: callers (CLI, UI server)
+        # handle it to produce a "required tool not found" message instead of letting
+        # it surface as a confusing "unrecognized output format" parse failure.

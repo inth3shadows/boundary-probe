@@ -3,46 +3,6 @@ from __future__ import annotations
 from boundary_probe.models import Diagnosis, EvidenceItem, SignalSnapshot
 
 
-def demo_signals(name: str) -> SignalSnapshot:
-    scenarios = {
-        "router-down": SignalSnapshot(
-            gateway_reachable=False,
-            dns_ok=False,
-            ip_connectivity_ok=False,
-            control_hosts_ok=False,
-            target_service_ok=False,
-        ),
-        "dns-failure": SignalSnapshot(
-            gateway_reachable=True,
-            dns_ok=False,
-            ip_connectivity_ok=True,
-            control_hosts_ok=True,
-            target_service_ok=False,
-        ),
-        "isp-path": SignalSnapshot(
-            gateway_reachable=True,
-            dns_ok=True,
-            ip_connectivity_ok=True,
-            control_hosts_ok=False,
-            target_service_ok=False,
-            packet_loss_after_hop1=True,
-            packet_loss_multiple_targets=True,
-        ),
-        "remote-service": SignalSnapshot(
-            gateway_reachable=True,
-            dns_ok=True,
-            ip_connectivity_ok=True,
-            control_hosts_ok=True,
-            target_service_ok=False,
-        ),
-    }
-    try:
-        return scenarios[name]
-    except KeyError as exc:
-        available = ", ".join(sorted(scenarios))
-        raise ValueError(f"unknown scenario '{name}'. Available: {available}") from exc
-
-
 def diagnose(signals: SignalSnapshot) -> Diagnosis:
     if not signals.gateway_reachable:
         return Diagnosis(
@@ -57,6 +17,23 @@ def diagnose(signals: SignalSnapshot) -> Diagnosis:
                 "Check the local link first: cable, Wi-Fi association, and interface status.",
                 "Power-cycle the router or gateway after confirming the modem or upstream link is stable.",
                 "If possible, test from a second device on the same LAN before escalating further.",
+            ],
+        )
+
+    if signals.gateway_reachable and not signals.ip_connectivity_ok and not signals.dns_ok:
+        return Diagnosis(
+            boundary="wan-gateway",
+            confidence=0.94,
+            summary="The local gateway is reachable, but IP connectivity and DNS are both failing — the WAN connection appears to be down.",
+            evidence=[
+                EvidenceItem("gateway", "Local gateway responded."),
+                EvidenceItem("ip-connectivity", "Direct IP connectivity (canary ping) failed."),
+                EvidenceItem("dns", "DNS resolution also failed."),
+            ],
+            remediation=[
+                "Check whether the router shows a WAN IP or PPPoE connection status.",
+                "Power-cycle the modem/ONT independently of the router.",
+                "If both devices power-cycled and no WAN IP appears, contact your ISP.",
             ],
         )
 

@@ -10,7 +10,9 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 keywords = ["networking", "diagnostics", "ping", "traceroute", "dns", "cli"]
-dependencies = []
+dependencies = [
+    "rich>=13.0",
+]
 
 classifiers = [
     "Development Status :: 4 - Beta",

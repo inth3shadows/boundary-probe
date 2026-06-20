@@ -75,6 +75,18 @@ def _build_parser() -> argparse.ArgumentParser:
     ui_parser.add_argument("--no-open", action="store_true", dest="no_open",
                            help="Do not open the browser automatically.")
 
+    watch_parser = subparsers.add_parser(
+        "watch",
+        help="Continuously probe a target and display live results.",
+    )
+    watch_parser.add_argument("target", help="Target to probe: hostname, IPv4, or URL.")
+    watch_parser.add_argument("--interval", type=int, default=60, metavar="S",
+                              help="Seconds between polls (default: 60). Use --no-path for intervals < 45s.")
+    watch_parser.add_argument("--no-path", action="store_true", dest="no_path",
+                              help="Skip tracert (faster; recommended for short intervals).")
+    watch_parser.add_argument("--count", type=int, default=None, metavar="N",
+                              help="Stop after N polls (default: run until Ctrl-C).")
+
     capture_parser = subparsers.add_parser(
         "capture",
         help="Capture a SignalSnapshot fixture from a live run.",
@@ -350,6 +362,15 @@ def main(argv: list[str] | None = None) -> None:
     if args.command == "ui":
         from boundary_probe.ui import launch_server
         launch_server(port=args.port, open_browser=not args.no_open)
+        return
+    if args.command == "watch":
+        from boundary_probe.watch import run_watch
+        try:
+            parsed = parse_target(args.target)
+        except ValueError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            sys.exit(2)
+        run_watch(parsed, interval_s=args.interval, skip_path=args.no_path, max_polls=args.count)
         return
     if args.command == "capture":
         _print_capture(args.name, args.target, args.no_path)

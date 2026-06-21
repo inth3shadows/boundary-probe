@@ -53,14 +53,15 @@ def test_remote_service_classifies_correctly() -> None:
     assert diagnosis.confidence == 0.95
 
 
-def test_inconclusive_when_all_healthy() -> None:
+def test_healthy_when_all_green() -> None:
+    # Every signal green → positive `healthy` verdict, NOT inconclusive.
     snap = SignalSnapshot(
         gateway_reachable=True, dns_ok=True, ip_connectivity_ok=True,
         control_hosts_ok=True, target_service_ok=True,
     )
     diagnosis = diagnose(snap)
-    assert diagnosis.boundary == "inconclusive"
-    assert diagnosis.confidence == 0.5
+    assert diagnosis.boundary == "healthy"
+    assert diagnosis.confidence == 0.9
 
 
 def test_wan_gateway_classifies_correctly() -> None:
@@ -141,12 +142,13 @@ def test_inconclusive_evidence_is_signal_aware() -> None:
     assert "coverage" in labels
 
 
-def test_inconclusive_when_all_healthy_plus_target_ok() -> None:
-    # Everything passing including target → inconclusive (no failure to localize)
+def test_healthy_verdict_includes_all_green_evidence() -> None:
+    # All green including target → healthy, with evidence covering every probed signal.
     snap = SignalSnapshot(
         gateway_reachable=True, dns_ok=True, ip_connectivity_ok=True,
         control_hosts_ok=True, target_service_ok=True,
     )
     diagnosis = diagnose(snap)
-    assert diagnosis.boundary == "inconclusive"
-    assert diagnosis.confidence == 0.5
+    assert diagnosis.boundary == "healthy"
+    labels = {e.label for e in diagnosis.evidence}
+    assert {"gateway", "dns", "ip-connectivity", "controls", "target"} <= labels

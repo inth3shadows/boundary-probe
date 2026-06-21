@@ -10,6 +10,10 @@ class SignalSnapshot:
     ip_connectivity_ok: bool
     control_hosts_ok: bool
     target_service_ok: bool
+    # True when a usable default route exists. False distinguishes a local-device
+    # fault (no default gateway in the route table) from a router-gateway fault
+    # (gateway present but unresponsive) — both otherwise look like gateway_reachable=False.
+    default_route_present: bool = True
     packet_loss_after_hop1: bool = False
     packet_loss_multiple_targets: bool = False
 

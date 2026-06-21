@@ -63,6 +63,9 @@ def collect_signals(
         ip_connectivity_ok=ip.ok,
         control_hosts_ok=controls.all_ok,
         target_service_ok=target.ok,
+        # No gateway IP in the route table => no default route => local-device fault,
+        # not a router that simply failed to answer a ping.
+        default_route_present=gateway.gateway_ip is not None,
         packet_loss_after_hop1=path_signals.packet_loss_after_hop1,
         packet_loss_multiple_targets=path_signals.packet_loss_multiple_targets,
     )

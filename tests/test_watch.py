@@ -157,3 +157,13 @@ def test_watch_file_not_found_breaks_cleanly(parsed_target, tmp_db):
     ):
         # Must not raise — FileNotFoundError is caught and watch exits via break
         run_watch(parsed_target, interval_s=60, skip_path=False, max_polls=5, persist=False)
+
+
+def test_every_boundary_has_an_explicit_watch_color():
+    """Guard: every boundary the engine can emit has a color in watch's map.
+    Without this, adding a boundary silently renders it uncolored (white)."""
+    from boundary_probe.engine import BOUNDARIES
+    from boundary_probe.watch import _BOUNDARY_COLOR
+
+    missing = [b for b in BOUNDARIES if b not in _BOUNDARY_COLOR]
+    assert not missing, f"boundaries with no watch color: {missing}"

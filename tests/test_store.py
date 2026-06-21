@@ -192,3 +192,31 @@ def test_env_override_path(tmp_path, monkeypatch):
     custom = tmp_path / "custom.db"
     monkeypatch.setenv("BOUNDARY_PROBE_DB", str(custom))
     assert get_db_path() == custom
+
+
+def test_default_route_present_persists_both_values(tmp_db):
+    """The default_route_present signal must survive a write→read round-trip
+    (regression: the column and INSERT value were originally omitted, so a
+    local-device run was indistinguishable from router-gateway in history)."""
+    import dataclasses
+
+    from boundary_probe.models import SignalSnapshot
+
+    base = _make_collection_result()
+    parsed = parse_target("example.com")
+    diag = Diagnosis(boundary="local-device", confidence=0.97, summary="s",
+                     evidence=[EvidenceItem("route", "no default route")], remediation=["fix"])
+
+    no_route = dataclasses.replace(base, snapshot=dataclasses.replace(base.snapshot, default_route_present=False))
+    with_route = dataclasses.replace(base, snapshot=dataclasses.replace(base.snapshot, default_route_present=True))
+
+    with connect() as conn:
+        insert_run(conn, parsed_target=parsed, snapshot=no_route.snapshot,
+                   diagnosis=diag, collection_result=no_route)
+        insert_run(conn, parsed_target=parsed, snapshot=with_route.snapshot,
+                   diagnosis=diag, collection_result=with_route)
+    with connect() as conn:
+        rows = fetch_recent(conn, limit=2)
+
+    values = {row["default_route_present"] for row in rows}
+    assert values == {0, 1}

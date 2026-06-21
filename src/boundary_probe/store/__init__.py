@@ -17,7 +17,7 @@ from boundary_probe.targets import ParsedTarget
 if TYPE_CHECKING:
     from boundary_probe.collectors.orchestrator import CollectionResult
 
-SCHEMA_VERSION = "1"
+SCHEMA_VERSION = "2"
 
 _DDL = """
 CREATE TABLE IF NOT EXISTS schema_meta (
@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS runs (
     ip_connectivity_ok            INTEGER NOT NULL CHECK (ip_connectivity_ok IN (0,1)),
     control_hosts_ok              INTEGER NOT NULL CHECK (control_hosts_ok IN (0,1)),
     target_service_ok             INTEGER NOT NULL CHECK (target_service_ok IN (0,1)),
+    default_route_present         INTEGER NOT NULL CHECK (default_route_present IN (0,1)),
     packet_loss_after_hop1        INTEGER NOT NULL CHECK (packet_loss_after_hop1 IN (0,1)),
     packet_loss_multiple_targets  INTEGER NOT NULL CHECK (packet_loss_multiple_targets IN (0,1)),
 
@@ -168,7 +169,8 @@ def insert_run(
             run_uuid, started_at, duration_ms,
             target_raw, target_kind, target_host, target_port, target_scheme,
             gateway_reachable, dns_ok, ip_connectivity_ok, control_hosts_ok,
-            target_service_ok, packet_loss_after_hop1, packet_loss_multiple_targets,
+            target_service_ok, default_route_present,
+            packet_loss_after_hop1, packet_loss_multiple_targets,
             boundary, confidence_float, confidence_band, summary,
             evidence_json, remediation_json,
             gateway_ip, gateway_rtt_ms,
@@ -178,7 +180,7 @@ def insert_run(
             path_primary_json, path_secondary_json,
             collector_notes_json
         ) VALUES (
-            ?,?,?,  ?,?,?,?,?,  ?,?,?,?,?,?,?,  ?,?,?,?,  ?,?,  ?,?,  ?,?,  ?,?,?,
+            ?,?,?,  ?,?,?,?,?,  ?,?,?,?,?,?,?,?,  ?,?,?,?,  ?,?,  ?,?,  ?,?,  ?,?,?,
             ?,?,?,  ?,?,  ?
         )
         """,
@@ -188,7 +190,8 @@ def insert_run(
             parsed_target.port, parsed_target.scheme,
             int(snapshot.gateway_reachable), int(snapshot.dns_ok),
             int(snapshot.ip_connectivity_ok), int(snapshot.control_hosts_ok),
-            int(snapshot.target_service_ok), int(snapshot.packet_loss_after_hop1),
+            int(snapshot.target_service_ok), int(snapshot.default_route_present),
+            int(snapshot.packet_loss_after_hop1),
             int(snapshot.packet_loss_multiple_targets),
             diagnosis.boundary, diagnosis.confidence, band, diagnosis.summary,
             evidence_json, remediation_json,

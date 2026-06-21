@@ -145,3 +145,11 @@ class TestHealthyRendering:
         body = render_detail(self._healthy_row(fake_collection_result))
         assert "no escalation needed" in body
         assert "Open email client" not in body
+
+    def test_escalation_text_reports_all_probes_healthy(self, tmp_db, fake_collection_result):
+        # Regression: a healthy run must produce the "ALL PROBES HEALTHY" report,
+        # not the "LOCAL NETWORK INCIDENT SUMMARY" fallback. The old check keyed on
+        # boundary == "inconclusive", which the healthy verdict no longer produces.
+        text = render_escalation(self._healthy_row(fake_collection_result))
+        assert "ALL PROBES HEALTHY" in text
+        assert "LOCAL NETWORK INCIDENT" not in text

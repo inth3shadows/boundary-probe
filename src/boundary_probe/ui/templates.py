@@ -233,6 +233,7 @@ def render_detail(row: sqlite3.Row) -> str:
         ("ip_connectivity_ok", bool(row["ip_connectivity_ok"])),
         ("control_hosts_ok", bool(row["control_hosts_ok"])),
         ("target_service_ok", bool(row["target_service_ok"])),
+        ("default_route_present", bool(row["default_route_present"])),
         ("packet_loss_after_hop1", bool(row["packet_loss_after_hop1"])),
         ("packet_loss_multiple_targets", bool(row["packet_loss_multiple_targets"])),
     ]

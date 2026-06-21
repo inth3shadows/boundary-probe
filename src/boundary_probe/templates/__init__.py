@@ -10,16 +10,9 @@ def render_escalation(row: sqlite3.Row) -> str:
     """Select and render the appropriate escalation template for a run."""
     boundary = row["boundary"]
 
-    # All-healthy inconclusive: nothing failed, nothing to escalate
-    all_healthy = (
-        boundary == "inconclusive"
-        and row["gateway_reachable"]
-        and row["dns_ok"]
-        and row["ip_connectivity_ok"]
-        and row["control_hosts_ok"]
-        and row["target_service_ok"]
-    )
-    if all_healthy:
+    # The engine returns the `healthy` verdict when every signal is green:
+    # nothing failed, so there is nothing to escalate.
+    if boundary == "healthy":
         title = "NETWORK STATUS REPORT — ALL PROBES HEALTHY"
         action = (
             "All probes returned healthy results. No network boundary failure was detected.\n"

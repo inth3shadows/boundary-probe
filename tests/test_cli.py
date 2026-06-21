@@ -231,3 +231,25 @@ def test_capture_rejects_slash_in_name(capsys):
         main(["capture", "foo/bar", "--target", "example.com"])
     assert exc.value.code == 2
     assert "fixture name" in capsys.readouterr().err
+
+
+def test_capture_real_roundtrip_with_no_default_route(monkeypatch, tmp_db, fake_collection_result, tmp_path):
+    # Regression for #3: capturing a snapshot with default_route_present=False must
+    # pass the real _print_capture round-trip validation. Originally the payload
+    # omitted the field, so reload defaulted it to True != False, failing validation
+    # and deleting the fixture with exit 4. Exercises the real code path, not a copy.
+    import dataclasses
+    import json
+
+    no_route = dataclasses.replace(
+        fake_collection_result,
+        snapshot=dataclasses.replace(fake_collection_result.snapshot, default_route_present=False),
+    )
+    monkeypatch.setattr("boundary_probe.cli.collect_signals", lambda *a, **kw: no_route)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "tests" / "fixtures").mkdir(parents=True)
+
+    output = _run(["capture", "localdev", "--target", "1.1.1.1"])
+    assert "captured fixture" in output
+    data = json.loads((tmp_path / "tests" / "fixtures" / "localdev.json").read_text(encoding="utf-8"))
+    assert data["default_route_present"] is False

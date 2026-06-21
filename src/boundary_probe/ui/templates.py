@@ -49,6 +49,8 @@ tr:hover td { background: #fafafa; }
 .boundary-box .blabel { font-size: 11px; text-transform: uppercase;
                          color: #888; margin-bottom: 4px; }
 .boundary-box .bvalue { font-size: 18px; font-weight: 700; }
+.boundary-box.ok { border-color: #1a7a40; background: #e6f4ea; }
+.boundary-box.ok .bvalue { color: #1a7a40; }
 .conf-note { font-size: 13px; color: #555; margin-left: 14px; vertical-align: middle; }
 ul.evidence { list-style: none; padding: 0; }
 ul.evidence li { padding: 4px 0 4px 0; border-bottom: 1px solid #f0f0f0; }
@@ -231,6 +233,7 @@ def render_detail(row: sqlite3.Row) -> str:
         ("ip_connectivity_ok", bool(row["ip_connectivity_ok"])),
         ("control_hosts_ok", bool(row["control_hosts_ok"])),
         ("target_service_ok", bool(row["target_service_ok"])),
+        ("default_route_present", bool(row["default_route_present"])),
         ("packet_loss_after_hop1", bool(row["packet_loss_after_hop1"])),
         ("packet_loss_multiple_targets", bool(row["packet_loss_multiple_targets"])),
     ]
@@ -241,22 +244,30 @@ def render_detail(row: sqlite3.Row) -> str:
     )
     sig_section = f'<div class="sig-grid">{pills}</div>'
 
-    from boundary_probe.templates import render_escalation
-    esc_text = render_escalation(row)
-    esc_uuid_short = row["run_uuid"][:8]
-    mailto_subj = _mailto_subject(boundary, row["target_host"])
-    esc_section = (
-        "<h2>Escalation Report</h2>\n"
-        '<div class="esc-actions">\n'
-        f'  <a href="/run/{_h(row["run_uuid"])}/escalation.txt" download>'
-        f"Download escalation_{esc_uuid_short}.txt</a>\n"
-        f'  <a href="mailto:?subject={mailto_subj}">Open email client</a>\n'
-        '  <button onclick="navigator.clipboard.writeText('
-        "document.getElementById('esc-text').innerText"
-        ')">Copy to clipboard</button>\n'
-        "</div>\n"
-        f'<pre id="esc-text">{_h(esc_text)}</pre>\n'
-    )
+    # A healthy connection has nothing to escalate; offering an incident report
+    # there would be misleading. The escalation.txt route still works for any run.
+    if boundary == "healthy":
+        esc_section = (
+            "<h2>Escalation Report</h2>\n"
+            '<p class="meta">Connection is healthy — no escalation needed.</p>\n'
+        )
+    else:
+        from boundary_probe.templates import render_escalation
+        esc_text = render_escalation(row)
+        esc_uuid_short = row["run_uuid"][:8]
+        mailto_subj = _mailto_subject(boundary, row["target_host"])
+        esc_section = (
+            "<h2>Escalation Report</h2>\n"
+            '<div class="esc-actions">\n'
+            f'  <a href="/run/{_h(row["run_uuid"])}/escalation.txt" download>'
+            f"Download escalation_{esc_uuid_short}.txt</a>\n"
+            f'  <a href="mailto:?subject={mailto_subj}">Open email client</a>\n'
+            '  <button onclick="navigator.clipboard.writeText('
+            "document.getElementById('esc-text').innerText"
+            ')">Copy to clipboard</button>\n'
+            "</div>\n"
+            f'<pre id="esc-text">{_h(esc_text)}</pre>\n'
+        )
 
     body = (
         '<div class="back"><a href="/">← Back to history</a></div>\n'
@@ -266,7 +277,7 @@ def render_detail(row: sqlite3.Row) -> str:
         f'  <span><strong>Time:</strong> {_h(ts)}</span>\n'
         f'  <span><strong>Duration:</strong> {_h(dur)}</span>\n'
         "</p>\n"
-        '<div class="boundary-box">\n'
+        f'<div class="boundary-box{" ok" if boundary == "healthy" else ""}">\n'
         '  <div class="blabel">Boundary</div>\n'
         f'  <div class="bvalue">{_h(boundary)}</div>\n'
         "</div>\n"

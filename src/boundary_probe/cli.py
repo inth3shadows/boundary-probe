@@ -320,6 +320,7 @@ def _print_capture(name: str, target: str, skip_path: bool) -> None:
         "ip_connectivity_ok": snap.ip_connectivity_ok,
         "control_hosts_ok": snap.control_hosts_ok,
         "target_service_ok": snap.target_service_ok,
+        "default_route_present": snap.default_route_present,
         "packet_loss_after_hop1": snap.packet_loss_after_hop1,
         "packet_loss_multiple_targets": snap.packet_loss_multiple_targets,
     }

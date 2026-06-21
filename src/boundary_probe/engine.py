@@ -1,98 +1,168 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+from dataclasses import dataclass
+
 from boundary_probe.models import Diagnosis, EvidenceItem, SignalSnapshot
 
 
-def diagnose(signals: SignalSnapshot) -> Diagnosis:
-    if not signals.gateway_reachable:
-        return Diagnosis(
-            boundary="router-gateway",
-            confidence=0.99,
-            summary="The local gateway is not reachable, so the problem is most likely on the LAN or router boundary.",
-            evidence=[
-                EvidenceItem("gateway", "Default gateway did not respond."),
-                EvidenceItem("external", "External reachability also failed, which is consistent with a local boundary."),
-            ],
-            remediation=[
-                "Check the local link first: cable, Wi-Fi association, and interface status.",
-                "Power-cycle the router or gateway after confirming the modem or upstream link is stable.",
-                "If possible, test from a second device on the same LAN before escalating further.",
-            ],
-        )
+@dataclass(frozen=True)
+class Rule:
+    """One row of the boundary decision table.
 
-    if signals.gateway_reachable and not signals.ip_connectivity_ok and not signals.dns_ok:
-        return Diagnosis(
-            boundary="wan-gateway",
-            confidence=0.94,
-            summary="The local gateway is reachable, but IP connectivity and DNS are both failing — the WAN connection appears to be down.",
-            evidence=[
-                EvidenceItem("gateway", "Local gateway responded."),
-                EvidenceItem("ip-connectivity", "Direct IP connectivity (canary ping) failed."),
-                EvidenceItem("dns", "DNS resolution also failed."),
-            ],
-            remediation=[
-                "Check whether the router shows a WAN IP or PPPoE connection status.",
-                "Power-cycle the modem/ONT independently of the router.",
-                "If both devices power-cycled and no WAN IP appears, contact your ISP.",
-            ],
-        )
+    ``match`` maps ``SignalSnapshot`` field names to the boolean value they must
+    hold for this rule to fire; fields omitted from ``match`` are don't-care.
+    Rules are evaluated top-to-bottom and the first whose ``match`` is fully
+    satisfied wins, so more specific rows must precede broader ones. ``build``
+    produces the full Diagnosis once the row is selected (some rows, e.g.
+    ``inconclusive``, build signal-aware evidence, so this stays a callable).
+    """
 
-    if signals.ip_connectivity_ok and not signals.dns_ok:
-        return Diagnosis(
-            boundary="dns",
-            confidence=0.96,
-            summary="Raw connectivity is available, but name resolution is failing.",
-            evidence=[
-                EvidenceItem("gateway", "Gateway reachability is healthy."),
-                EvidenceItem("ip-connectivity", "Direct IP connectivity still works."),
-                EvidenceItem("dns", "DNS lookups are failing or inconsistent."),
-            ],
-            remediation=[
-                "Retry the lookup using a known-good resolver such as 1.1.1.1 or 8.8.8.8.",
-                "Inspect the router or OS DNS settings for stale or unreachable resolvers.",
-                "If only one resolver fails, replace it before changing broader network settings.",
-            ],
-        )
+    boundary: str
+    match: dict[str, bool]
+    build: Callable[[SignalSnapshot], Diagnosis]
 
-    if (
-        signals.gateway_reachable
-        and signals.dns_ok
-        and signals.packet_loss_after_hop1
-        and signals.packet_loss_multiple_targets
-    ):
-        return Diagnosis(
-            boundary="isp-upstream",
-            confidence=0.93,
-            summary="The local network appears healthy, but loss is beginning after the local boundary across multiple destinations.",
-            evidence=[
-                EvidenceItem("gateway", "Gateway reachability is healthy."),
-                EvidenceItem("dns", "DNS is working."),
-                EvidenceItem("path", "Loss begins after hop 1."),
-                EvidenceItem("breadth", "More than one external target shows the same degradation."),
-            ],
-            remediation=[
-                "Repeat the run twice more over a 10-15 minute window to confirm it is not a transient spike.",
-                "Bypass the router if practical to separate ISP issues from router firmware or NAT pressure.",
-                "Escalate to the ISP with timestamps, packet loss, and the fact that multiple targets degrade similarly.",
-            ],
-        )
+    def matches(self, signals: SignalSnapshot) -> bool:
+        return all(getattr(signals, field) == expected for field, expected in self.match.items())
 
-    if signals.gateway_reachable and signals.dns_ok and signals.control_hosts_ok and not signals.target_service_ok:
-        return Diagnosis(
-            boundary="remote-service",
-            confidence=0.95,
-            summary="General internet health is good, but the target service is failing specifically.",
-            evidence=[
-                EvidenceItem("controls", "Known-good internet controls are healthy."),
-                EvidenceItem("target", "The target service still fails."),
-            ],
-            remediation=[
-                "Check the target service status page or origin health before changing local network settings.",
-                "Try a second network only to confirm the target-specific failure pattern, not as the first step.",
-                "If you operate the service, inspect TLS, DNS, reverse proxy, and origin availability.",
-            ],
-        )
 
+def _local_device(_: SignalSnapshot) -> Diagnosis:
+    return Diagnosis(
+        boundary="local-device",
+        confidence=0.97,
+        summary="No default route is available on this machine, so the problem is local to this device rather than the router or upstream network.",
+        evidence=[
+            EvidenceItem("route", "No default gateway is present in the local route table."),
+            EvidenceItem("local", "Without a default route, traffic cannot leave this machine regardless of router or ISP state."),
+        ],
+        remediation=[
+            "Confirm the network interface is up and associated (Wi-Fi connected or Ethernet linked).",
+            "Check that the interface has a valid IP address and was offered a default gateway by DHCP.",
+            "Renew the DHCP lease or reconnect the interface, then re-run the diagnosis.",
+        ],
+    )
+
+
+def _router_gateway(_: SignalSnapshot) -> Diagnosis:
+    return Diagnosis(
+        boundary="router-gateway",
+        confidence=0.99,
+        summary="The local gateway is not reachable, so the problem is most likely on the LAN or router boundary.",
+        evidence=[
+            EvidenceItem("gateway", "Default gateway did not respond."),
+            EvidenceItem("external", "External reachability also failed, which is consistent with a local boundary."),
+        ],
+        remediation=[
+            "Check the local link first: cable, Wi-Fi association, and interface status.",
+            "Power-cycle the router or gateway after confirming the modem or upstream link is stable.",
+            "If possible, test from a second device on the same LAN before escalating further.",
+        ],
+    )
+
+
+def _wan_gateway(_: SignalSnapshot) -> Diagnosis:
+    return Diagnosis(
+        boundary="wan-gateway",
+        confidence=0.94,
+        summary="The local gateway is reachable, but IP connectivity and DNS are both failing — the WAN connection appears to be down.",
+        evidence=[
+            EvidenceItem("gateway", "Local gateway responded."),
+            EvidenceItem("ip-connectivity", "Direct IP connectivity (canary ping) failed."),
+            EvidenceItem("dns", "DNS resolution also failed."),
+        ],
+        remediation=[
+            "Check whether the router shows a WAN IP or PPPoE connection status.",
+            "Power-cycle the modem/ONT independently of the router.",
+            "If both devices power-cycled and no WAN IP appears, contact your ISP.",
+        ],
+    )
+
+
+def _dns(_: SignalSnapshot) -> Diagnosis:
+    return Diagnosis(
+        boundary="dns",
+        confidence=0.96,
+        summary="Raw connectivity is available, but name resolution is failing.",
+        evidence=[
+            EvidenceItem("gateway", "Gateway reachability is healthy."),
+            EvidenceItem("ip-connectivity", "Direct IP connectivity still works."),
+            EvidenceItem("dns", "DNS lookups are failing or inconsistent."),
+        ],
+        remediation=[
+            "Retry the lookup using a known-good resolver such as 1.1.1.1 or 8.8.8.8.",
+            "Inspect the router or OS DNS settings for stale or unreachable resolvers.",
+            "If only one resolver fails, replace it before changing broader network settings.",
+        ],
+    )
+
+
+def _isp_upstream(_: SignalSnapshot) -> Diagnosis:
+    return Diagnosis(
+        boundary="isp-upstream",
+        confidence=0.93,
+        summary="The local network appears healthy, but loss is beginning after the local boundary across multiple destinations.",
+        evidence=[
+            EvidenceItem("gateway", "Gateway reachability is healthy."),
+            EvidenceItem("dns", "DNS is working."),
+            EvidenceItem("path", "Loss begins after hop 1."),
+            EvidenceItem("breadth", "More than one external target shows the same degradation."),
+        ],
+        remediation=[
+            "Repeat the run twice more over a 10-15 minute window to confirm it is not a transient spike.",
+            "Bypass the router if practical to separate ISP issues from router firmware or NAT pressure.",
+            "Escalate to the ISP with timestamps, packet loss, and the fact that multiple targets degrade similarly.",
+        ],
+    )
+
+
+def _remote_service(_: SignalSnapshot) -> Diagnosis:
+    return Diagnosis(
+        boundary="remote-service",
+        confidence=0.95,
+        summary="General internet health is good, but the target service is failing specifically.",
+        evidence=[
+            EvidenceItem("controls", "Known-good internet controls are healthy."),
+            EvidenceItem("target", "The target service still fails."),
+        ],
+        remediation=[
+            "Check the target service status page or origin health before changing local network settings.",
+            "Try a second network only to confirm the target-specific failure pattern, not as the first step.",
+            "If you operate the service, inspect TLS, DNS, reverse proxy, and origin availability.",
+        ],
+    )
+
+
+def _healthy(_: SignalSnapshot) -> Diagnosis:
+    # Why a positive verdict exists at all:
+    # The fault rules above only fire on a *detected* failure. Before this row,
+    # an all-green connection matched nothing and fell through to `inconclusive`
+    # at 0.5 — i.e. a perfectly working connection was reported identically to
+    # "I couldn't tell." That erodes trust: a user running the tool when things
+    # are fine got an "I don't know" instead of an "all checks passed." A
+    # `healthy` verdict asserts the difference — the green path was actively
+    # probed (gateway, DNS, IP, controls, target, no path loss), not merely
+    # unmatched. Confidence is 0.9, not 0.99: health is a point-in-time snapshot
+    # that a later run can revise, so we stop short of the "direct, repeated
+    # evidence" tier the confidence model reserves for 0.99.
+    return Diagnosis(
+        boundary="healthy",
+        confidence=0.9,
+        summary="All checks passed: the gateway, DNS, direct connectivity, control hosts, and the target service are reachable with no path loss.",
+        evidence=[
+            EvidenceItem("gateway", "Local gateway is reachable."),
+            EvidenceItem("dns", "Name resolution is working."),
+            EvidenceItem("ip-connectivity", "Direct IP connectivity is healthy."),
+            EvidenceItem("controls", "Known-good internet controls are reachable."),
+            EvidenceItem("target", "The target service is reachable."),
+        ],
+        remediation=[
+            "No action needed — connectivity is healthy as of this run.",
+            "If you are troubleshooting an intermittent issue, re-run during the failure window to capture it.",
+        ],
+    )
+
+
+def _inconclusive(signals: SignalSnapshot) -> Diagnosis:
     evidence = [
         EvidenceItem("gateway", "reachable" if signals.gateway_reachable else "unreachable"),
         EvidenceItem("dns", "ok" if signals.dns_ok else "failed"),
@@ -112,3 +182,50 @@ def diagnose(signals: SignalSnapshot) -> Diagnosis:
         ],
     )
 
+
+# Ordered narrowest-certain-first; the first matching row wins. local-device
+# precedes router-gateway so a missing default route is not absorbed by the
+# broader gateway-unreachable row. The final row matches everything (catch-all).
+RULES: list[Rule] = [
+    Rule("local-device", {"gateway_reachable": False, "default_route_present": False}, _local_device),
+    Rule("router-gateway", {"gateway_reachable": False}, _router_gateway),
+    Rule("wan-gateway", {"gateway_reachable": True, "ip_connectivity_ok": False, "dns_ok": False}, _wan_gateway),
+    Rule("dns", {"ip_connectivity_ok": True, "dns_ok": False}, _dns),
+    Rule(
+        "isp-upstream",
+        {"gateway_reachable": True, "dns_ok": True, "packet_loss_after_hop1": True, "packet_loss_multiple_targets": True},
+        _isp_upstream,
+    ),
+    Rule(
+        "remote-service",
+        {"gateway_reachable": True, "dns_ok": True, "control_hosts_ok": True, "target_service_ok": False},
+        _remote_service,
+    ),
+    # Positive verdict: every signal green. Must precede the inconclusive
+    # catch-all so an all-healthy connection is affirmed, not reported as unknown.
+    Rule(
+        "healthy",
+        {
+            "gateway_reachable": True,
+            "dns_ok": True,
+            "ip_connectivity_ok": True,
+            "control_hosts_ok": True,
+            "target_service_ok": True,
+            "packet_loss_after_hop1": False,
+            "packet_loss_multiple_targets": False,
+        },
+        _healthy,
+    ),
+    Rule("inconclusive", {}, _inconclusive),
+]
+
+# Single source of truth for the boundary vocabulary, derived from the table.
+BOUNDARIES: tuple[str, ...] = tuple(rule.boundary for rule in RULES)
+
+
+def diagnose(signals: SignalSnapshot) -> Diagnosis:
+    for rule in RULES:
+        if rule.matches(signals):
+            return rule.build(signals)
+    # The final rule has an empty match and always fires, so this is unreachable.
+    raise AssertionError("decision table has no catch-all rule")  # pragma: no cover

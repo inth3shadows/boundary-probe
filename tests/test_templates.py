@@ -109,3 +109,47 @@ class TestRenderEscalation:
         row, _ = _make_row(tmp_db, fake_collection_result)
         text = render_escalation(row)
         assert "192.168.1.1" in text
+
+
+class TestHealthyRendering:
+    def _healthy_row(self, fake_collection_result):
+        import dataclasses
+
+        from boundary_probe.models import SignalSnapshot
+        from boundary_probe.store import fetch_run
+
+        green = SignalSnapshot(
+            gateway_reachable=True, dns_ok=True, ip_connectivity_ok=True,
+            control_hosts_ok=True, target_service_ok=True,
+        )
+        result = dataclasses.replace(fake_collection_result, snapshot=green)
+        parsed = parse_target("example.com")
+        diag = diagnose(green)
+        assert diag.boundary == "healthy"
+        with connect() as conn:
+            uuid = insert_run(conn, parsed_target=parsed, snapshot=green,
+                              diagnosis=diag, collection_result=result)
+        with connect() as conn:
+            return fetch_run(conn, uuid)
+
+    def test_detail_marks_boundary_box_ok(self, tmp_db, fake_collection_result):
+        from boundary_probe.ui.templates import render_detail
+
+        body = render_detail(self._healthy_row(fake_collection_result))
+        assert 'class="boundary-box ok"' in body
+        assert ">healthy<" in body
+
+    def test_detail_suppresses_escalation_actions_when_healthy(self, tmp_db, fake_collection_result):
+        from boundary_probe.ui.templates import render_detail
+
+        body = render_detail(self._healthy_row(fake_collection_result))
+        assert "no escalation needed" in body
+        assert "Open email client" not in body
+
+    def test_escalation_text_reports_all_probes_healthy(self, tmp_db, fake_collection_result):
+        # Regression: a healthy run must produce the "ALL PROBES HEALTHY" report,
+        # not the "LOCAL NETWORK INCIDENT SUMMARY" fallback. The old check keyed on
+        # boundary == "inconclusive", which the healthy verdict no longer produces.
+        text = render_escalation(self._healthy_row(fake_collection_result))
+        assert "ALL PROBES HEALTHY" in text
+        assert "LOCAL NETWORK INCIDENT" not in text

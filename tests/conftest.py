@@ -10,9 +10,18 @@ from boundary_probe.models import SignalSnapshot
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 
-def load_signal_fixture(name: str) -> SignalSnapshot:
+def load_fixture_raw(name: str) -> dict:
+    """Return the full parsed fixture JSON (signals + measurements, if present)."""
     path = FIXTURES_DIR / f"{name}.json"
-    data = json.loads(path.read_text(encoding="utf-8"))
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def load_signal_fixture(name: str) -> SignalSnapshot:
+    data = load_fixture_raw(name)
+    if "signals" in data:
+        # v2 enriched fixture: signals live in their own block alongside measurements.
+        return SignalSnapshot(**data["signals"])
+    # v1 synthetic fixture: flat booleans, no measurements.
     data.pop("scenario", None)
     return SignalSnapshot(**data)
 
@@ -20,6 +29,11 @@ def load_signal_fixture(name: str) -> SignalSnapshot:
 @pytest.fixture
 def signal_fixture():
     return load_signal_fixture
+
+
+@pytest.fixture
+def fixture_raw():
+    return load_fixture_raw
 
 
 # ---------------------------------------------------------------------------

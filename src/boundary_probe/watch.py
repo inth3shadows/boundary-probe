@@ -36,11 +36,13 @@ _SIGNALS = [
 ]
 
 _BOUNDARY_COLOR = {
+    "local-device": "red",
     "router-gateway": "red",
     "wan-gateway": "red",
     "dns": "yellow",
     "isp-upstream": "yellow",
     "remote-service": "magenta",
+    "healthy": "green",
     "inconclusive": "dim",
 }
 

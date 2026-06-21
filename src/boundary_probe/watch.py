@@ -140,7 +140,13 @@ def run_watch(
 
                 if persist:
                     with connect() as conn:
-                        insert_run(conn, parsed_target, result.snapshot, diagnosis, result)
+                        insert_run(
+                            conn,
+                            parsed_target=parsed_target,
+                            snapshot=result.snapshot,
+                            diagnosis=diagnosis,
+                            collection_result=result,
+                        )
 
                 poll_num += 1
                 history.append(PollRecord(ts=datetime.now(), result=result, diagnosis=diagnosis))

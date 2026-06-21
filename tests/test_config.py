@@ -242,3 +242,10 @@ def test_validate_defaults_pass(monkeypatch, tmp_path):
     from boundary_probe.config import load_config
     cfg = load_config()  # must not raise or exit
     assert cfg.control_quorum <= len(cfg.control_hosts)
+
+
+def test_validate_raises_valueerror_directly():
+    from boundary_probe.config import ProbeConfig, _validate
+    bad = ProbeConfig(control_quorum=0)
+    with pytest.raises(ValueError, match="control_quorum"):
+        _validate(bad)

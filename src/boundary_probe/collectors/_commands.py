@@ -12,7 +12,7 @@ def ping_cmd(host: str, count: int, timeout_ms: int) -> list[str]:
     if _WIN:
         return ["ping", "-4", "-n", str(count), "-w", str(timeout_ms), host]
     timeout_s = max(1, timeout_ms // 1000)
-    return ["ping", "-c", str(count), "-W", str(timeout_s), "-4", host]
+    return ["ping", "-c", str(count), "-W", str(timeout_s), "-4", "--", host]
 
 
 def traceroute_cmd(host: str, max_hops: int, timeout_ms: int) -> list[str]:
@@ -20,7 +20,7 @@ def traceroute_cmd(host: str, max_hops: int, timeout_ms: int) -> list[str]:
     if _WIN:
         return ["tracert", "-4", "-h", str(max_hops), "-w", str(timeout_ms), host]
     timeout_s = max(1, timeout_ms // 1000)
-    return ["traceroute", "-4", "-q", "3", "-m", str(max_hops), "-w", str(timeout_s), host]
+    return ["traceroute", "-4", "-q", "3", "-m", str(max_hops), "-w", str(timeout_s), "--", host]
 
 
 def route_cmd() -> list[str]:

@@ -25,6 +25,10 @@ class ProbeRequestHandler(http.server.BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(encoded)))
+        self.send_header("Content-Security-Policy",
+                         "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("X-Content-Type-Options", "nosniff")
         self.end_headers()
         self.wfile.write(encoded)
 
@@ -52,10 +56,18 @@ class ProbeRequestHandler(http.server.BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(encoded)))
+        self.send_header("X-Content-Type-Options", "nosniff")
         self.end_headers()
         self.wfile.write(encoded)
 
     def do_POST(self) -> None:
+        origin = self.headers.get("Origin", "")
+        if origin:
+            port = self.server.server_address[1]
+            allowed = {f"http://localhost:{port}", f"http://127.0.0.1:{port}"}
+            if origin not in allowed:
+                self._send_html(403, render_error("Forbidden: cross-origin request rejected.", "/"))
+                return
         path = self.path.split("?", 1)[0]
         if path == "/diagnose":
             self._handle_diagnose_loading()
@@ -94,7 +106,10 @@ class ProbeRequestHandler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(encoded)
 
     def _read_params(self) -> tuple[str, bool]:
-        length = int(self.headers.get("Content-Length", 0))
+        try:
+            length = max(0, int(self.headers.get("Content-Length") or 0))
+        except ValueError:
+            length = 0
         raw = self.rfile.read(length).decode("utf-8", errors="replace")
         params = urllib.parse.parse_qs(raw, keep_blank_values=False)
         target_str = (params.get("target") or [""])[0].strip()

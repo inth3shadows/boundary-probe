@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from dataclasses import asdict
@@ -296,6 +297,9 @@ def _escalate(run_uuid: str, copy: bool, output: str | None, no_file: bool) -> N
 
 
 def _print_capture(name: str, target: str, skip_path: bool) -> None:
+    if not re.fullmatch(r"[a-zA-Z0-9_-]+", name):
+        print("error: fixture name must contain only letters, digits, hyphens, and underscores", file=sys.stderr)
+        sys.exit(2)
     try:
         parsed = parse_target(target)
     except ValueError as exc:

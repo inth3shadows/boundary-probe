@@ -172,6 +172,68 @@ class TestEscalationRoute:
         assert "escalation.txt" in body
 
 
+class TestSecurityHeaders:
+    def test_html_response_has_csp(self, ui_server):
+        host, port, _ = ui_server
+        conn = http.client.HTTPConnection(host, port, timeout=5)
+        conn.request("GET", "/")
+        resp = conn.getresponse()
+        resp.read()
+        conn.close()
+        assert "Content-Security-Policy" in {k for k, v in resp.getheaders()}
+
+    def test_html_response_has_x_frame_options(self, ui_server):
+        host, port, _ = ui_server
+        conn = http.client.HTTPConnection(host, port, timeout=5)
+        conn.request("GET", "/")
+        resp = conn.getresponse()
+        resp.read()
+        conn.close()
+        assert resp.getheader("X-Frame-Options") == "DENY"
+
+    def test_html_response_has_nosniff(self, ui_server):
+        host, port, _ = ui_server
+        conn = http.client.HTTPConnection(host, port, timeout=5)
+        conn.request("GET", "/")
+        resp = conn.getresponse()
+        resp.read()
+        conn.close()
+        assert resp.getheader("X-Content-Type-Options") == "nosniff"
+
+
+class TestCSRFProtection:
+    def _post_with_origin(self, host: str, port: int, path: str, fields: dict, origin: str) -> int:
+        conn = http.client.HTTPConnection(host, port, timeout=5)
+        body = urllib.parse.urlencode(fields)
+        conn.request("POST", path, body, {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Origin": origin,
+        })
+        resp = conn.getresponse()
+        resp.read()
+        conn.close()
+        return resp.status
+
+    def test_cross_origin_post_rejected(self, ui_server):
+        host, port, _ = ui_server
+        status = self._post_with_origin(host, port, "/diagnose",
+                                        {"target": "example.com"}, "http://evil.com")
+        assert status == 403
+
+    def test_localhost_origin_allowed(self, ui_server):
+        host, port, _ = ui_server
+        status = self._post_with_origin(host, port, "/diagnose",
+                                        {"target": "example.com"},
+                                        f"http://localhost:{port}")
+        assert status == 200
+
+    def test_no_origin_header_allowed(self, ui_server):
+        # Direct HTTP tools (curl, httpie) don't send Origin — must not be blocked
+        host, port, _ = ui_server
+        status, _, _ = _post(host, port, "/diagnose", {"target": "example.com"})
+        assert status == 200
+
+
 class TestUICLI:
     def test_ui_help(self):
         from io import StringIO

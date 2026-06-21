@@ -32,7 +32,7 @@ def test_traceroute_cmd_windows():
 def test_traceroute_cmd_linux():
     with patch.object(cmd_mod, "_WIN", False):
         result = cmd_mod.traceroute_cmd("example.com", 10, 500)
-    assert result == ["traceroute", "-4", "-m", "10", "-w", "1", "example.com"]
+    assert result == ["traceroute", "-4", "-q", "3", "-m", "10", "-w", "1", "example.com"]
 
 
 def test_route_cmd_windows():

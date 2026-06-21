@@ -87,6 +87,21 @@ def test_watch_persists_each_poll(parsed_target, fake_collection_result, tmp_db)
     assert mock_insert.call_count == 1
 
 
+def test_watch_persist_real_insert(parsed_target, fake_collection_result, tmp_db):
+    """Regression: insert_run requires keyword args; positional call raises TypeError."""
+    with (
+        patch("boundary_probe.watch.collect_signals", return_value=fake_collection_result),
+        patch("boundary_probe.watch.time.sleep"),
+    ):
+        run_watch(parsed_target, interval_s=60, skip_path=False, max_polls=1, persist=True)
+
+    from boundary_probe.store import connect, fetch_recent
+    with connect() as conn:
+        rows = fetch_recent(conn, 10)
+    assert len(rows) == 1
+    assert rows[0]["boundary"] == "remote-service"
+
+
 def test_watch_no_persist_skips_store(parsed_target, fake_collection_result, tmp_db):
     with (
         patch("boundary_probe.watch.collect_signals", return_value=fake_collection_result),

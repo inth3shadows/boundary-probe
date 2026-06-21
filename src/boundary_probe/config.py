@@ -66,9 +66,7 @@ def _validate(cfg: ProbeConfig) -> None:
             errors.append(f"{name} must be in 0–100 (got {val})")
 
     if errors:
-        for msg in errors:
-            print(f"error: config: {msg}", file=sys.stderr)
-        sys.exit(1)
+        raise ValueError("\n".join(errors))
 
 
 _PLATFORM: str = sys.platform
@@ -131,5 +129,10 @@ def load_config() -> ProbeConfig:
         target_ping_s=float(timeouts.get("target_ping_s", _DEFAULTS.target_ping_s)),
         tracert_s=float(timeouts.get("tracert_s", _DEFAULTS.tracert_s)),
     )
-    _validate(cfg)
+    try:
+        _validate(cfg)
+    except ValueError as exc:
+        for msg in str(exc).splitlines():
+            print(f"error: config: {msg}", file=sys.stderr)
+        sys.exit(1)
     return cfg

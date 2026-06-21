@@ -133,9 +133,12 @@ def run_watch(
     ) as live:
         try:
             while max_polls is None or poll_num < max_polls:
-                live.update(_render_panel(parsed_target.raw, poll_num, interval_s, history, None))
-
-                result = collect_signals(parsed_target, skip_path=skip_path)
+                try:
+                    result = collect_signals(parsed_target, skip_path=skip_path)
+                except FileNotFoundError as exc:
+                    from rich.console import Console
+                    Console().print(f"[red]error:[/red] required network tool not found ({exc}). Stopping watch.")
+                    break
                 diagnosis = diagnose(result.snapshot)
 
                 if persist:
@@ -150,7 +153,7 @@ def run_watch(
 
                 poll_num += 1
                 history.append(PollRecord(ts=datetime.now(), result=result, diagnosis=diagnosis))
-                if len(history) > 10:
+                if len(history) > 8:
                     history.pop(0)
 
                 elapsed_s = result.elapsed_ms / 1000

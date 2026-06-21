@@ -128,7 +128,7 @@ def test_watch_overrun_skips_sleep(parsed_target, fake_collection_result, tmp_db
     mock_sleep.assert_not_called()
 
 
-def test_watch_history_capped_at_ten(parsed_target, fake_collection_result, tmp_db):
+def test_watch_history_capped_at_eight(parsed_target, fake_collection_result, tmp_db):
     history_ref: list = []
 
     original_render = _render_panel
@@ -147,4 +147,13 @@ def test_watch_history_capped_at_ten(parsed_target, fake_collection_result, tmp_
     ):
         run_watch(parsed_target, interval_s=60, skip_path=False, max_polls=12, persist=False)
 
-    assert len(history_ref) <= 10
+    assert len(history_ref) <= 8
+
+
+def test_watch_file_not_found_breaks_cleanly(parsed_target, tmp_db):
+    with (
+        patch("boundary_probe.watch.collect_signals", side_effect=FileNotFoundError("traceroute")),
+        patch("boundary_probe.watch.time.sleep"),
+    ):
+        # Must not raise — FileNotFoundError is caught and watch exits via break
+        run_watch(parsed_target, interval_s=60, skip_path=False, max_polls=5, persist=False)

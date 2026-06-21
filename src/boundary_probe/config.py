@@ -27,7 +27,7 @@ class ProbeConfig:
     ip_connectivity_s: float = 15.0
     control_hosts_s: float = 10.0
     target_ping_s: float = 8.0
-    tracert_s: float = 30.0
+    tracert_s: float = 60.0
 
 
 _DEFAULTS = ProbeConfig()
@@ -113,25 +113,25 @@ def load_config() -> ProbeConfig:
         else _DEFAULTS.control_hosts
     )
 
-    cfg = ProbeConfig(
-        control_hosts=control_hosts,
-        canary_ip=str(probes.get("canary_ip", _DEFAULTS.canary_ip)),
-        secondary_target=str(probes.get("secondary_target", _DEFAULTS.secondary_target)),
-        control_quorum=int(probes.get("control_quorum", _DEFAULTS.control_quorum)),
-        path_loss_pct=float(thresholds.get("path_loss_pct", _DEFAULTS.path_loss_pct)),
-        control_loss_pct=float(thresholds.get("control_loss_pct", _DEFAULTS.control_loss_pct)),
-        ip_loss_pct=float(thresholds.get("ip_loss_pct", _DEFAULTS.ip_loss_pct)),
-        gateway_min_replies=int(thresholds.get("gateway_min_replies", _DEFAULTS.gateway_min_replies)),
-        gateway_route_s=float(timeouts.get("gateway_route_s", _DEFAULTS.gateway_route_s)),
-        gateway_ping_s=float(timeouts.get("gateway_ping_s", _DEFAULTS.gateway_ping_s)),
-        ip_connectivity_s=float(timeouts.get("ip_connectivity_s", _DEFAULTS.ip_connectivity_s)),
-        control_hosts_s=float(timeouts.get("control_hosts_s", _DEFAULTS.control_hosts_s)),
-        target_ping_s=float(timeouts.get("target_ping_s", _DEFAULTS.target_ping_s)),
-        tracert_s=float(timeouts.get("tracert_s", _DEFAULTS.tracert_s)),
-    )
     try:
+        cfg = ProbeConfig(
+            control_hosts=control_hosts,
+            canary_ip=str(probes.get("canary_ip", _DEFAULTS.canary_ip)),
+            secondary_target=str(probes.get("secondary_target", _DEFAULTS.secondary_target)),
+            control_quorum=int(probes.get("control_quorum", _DEFAULTS.control_quorum)),
+            path_loss_pct=float(thresholds.get("path_loss_pct", _DEFAULTS.path_loss_pct)),
+            control_loss_pct=float(thresholds.get("control_loss_pct", _DEFAULTS.control_loss_pct)),
+            ip_loss_pct=float(thresholds.get("ip_loss_pct", _DEFAULTS.ip_loss_pct)),
+            gateway_min_replies=int(thresholds.get("gateway_min_replies", _DEFAULTS.gateway_min_replies)),
+            gateway_route_s=float(timeouts.get("gateway_route_s", _DEFAULTS.gateway_route_s)),
+            gateway_ping_s=float(timeouts.get("gateway_ping_s", _DEFAULTS.gateway_ping_s)),
+            ip_connectivity_s=float(timeouts.get("ip_connectivity_s", _DEFAULTS.ip_connectivity_s)),
+            control_hosts_s=float(timeouts.get("control_hosts_s", _DEFAULTS.control_hosts_s)),
+            target_ping_s=float(timeouts.get("target_ping_s", _DEFAULTS.target_ping_s)),
+            tracert_s=float(timeouts.get("tracert_s", _DEFAULTS.tracert_s)),
+        )
         _validate(cfg)
-    except ValueError as exc:
+    except (ValueError, TypeError) as exc:
         for msg in str(exc).splitlines():
             print(f"error: config: {msg}", file=sys.stderr)
         sys.exit(1)

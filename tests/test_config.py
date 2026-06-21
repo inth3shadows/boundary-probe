@@ -249,3 +249,15 @@ def test_validate_raises_valueerror_directly():
     bad = ProbeConfig(control_quorum=0)
     with pytest.raises(ValueError, match="control_quorum"):
         _validate(bad)
+
+
+def test_wrong_typed_toml_value_gives_clean_error(monkeypatch, tmp_path, capsys):
+    # TOML allows strings; int("two") must not produce a raw traceback
+    _write_config(tmp_path, "[probes]\ncontrol_quorum = \"two\"\n")
+    monkeypatch.setenv("BOUNDARY_PROBE_CONFIG", str(tmp_path / "config.toml"))
+    from boundary_probe.config import load_config
+    with pytest.raises(SystemExit) as exc:
+        load_config()
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert "error: config:" in err

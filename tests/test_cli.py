@@ -217,3 +217,17 @@ def test_escalate_help():
             main(["escalate", "--help"])
     assert exc.value.code == 0
     assert "--copy" in buf.getvalue()
+
+
+def test_capture_rejects_path_traversal_name(capsys):
+    with pytest.raises(SystemExit) as exc:
+        main(["capture", "../evil", "--target", "example.com"])
+    assert exc.value.code == 2
+    assert "fixture name" in capsys.readouterr().err
+
+
+def test_capture_rejects_slash_in_name(capsys):
+    with pytest.raises(SystemExit) as exc:
+        main(["capture", "foo/bar", "--target", "example.com"])
+    assert exc.value.code == 2
+    assert "fixture name" in capsys.readouterr().err

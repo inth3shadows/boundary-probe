@@ -51,6 +51,17 @@ def test_duration_ms_is_non_negative():
     assert result.duration_ms >= 0
 
 
+def test_debug_mode_prints_to_stderr(capsys, monkeypatch):
+    import boundary_probe.collectors._runner as runner_mod
+    monkeypatch.setattr(runner_mod, "_DEBUG", True)
+    proc = _make_proc(stdout=b"pong", stderr=b"")
+    with patch("subprocess.run", return_value=proc):
+        DefaultRunner().run(["ping", "host"], timeout_s=5.0)
+    err = capsys.readouterr().err
+    assert "[boundary-probe debug]" in err
+    assert "ping" in err
+
+
 def test_creationflags_on_windows_only():
     """CREATE_NO_WINDOW is passed as creationflags on Windows; 0 on Linux."""
     proc = _make_proc()

@@ -10,7 +10,9 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 keywords = ["networking", "diagnostics", "ping", "traceroute", "dns", "cli"]
-dependencies = []
+dependencies = [
+    "rich>=13.0",
+]
 
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -20,6 +22,7 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: Microsoft :: Windows",
     "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",

@@ -64,6 +64,42 @@ def test_healthy_when_all_green() -> None:
     assert diagnosis.confidence == 0.9
 
 
+def test_icmp_filtered_gateway_is_not_a_lan_incident() -> None:
+    # Regression (2026-06-22, WSL2): a gateway that does not answer ICMP but is
+    # forwarding traffic — control hosts and the canary are reachable *through*
+    # it — must NOT be accused as a router-gateway LAN incident. Before the
+    # gateway_functional fix this classified as router-gateway @ 0.99 while the
+    # whole connection was demonstrably healthy.
+    snap = SignalSnapshot(
+        gateway_reachable=False,    # gateway filters ICMP echo to itself
+        dns_ok=True,
+        ip_connectivity_ok=True,
+        control_hosts_ok=True,      # traffic provably traversed the gateway
+        target_service_ok=True,
+        default_route_present=True,
+    )
+    diagnosis = diagnose(snap)
+    assert diagnosis.boundary == "healthy"
+    assert diagnosis.confidence == 0.9
+    # Evidence must reflect reality: forwarding, not a falsely-claimed ICMP reply.
+    gw = next(e for e in diagnosis.evidence if e.label == "gateway")
+    assert "forwarding" in gw.detail.lower()
+    assert "reachable" not in gw.detail.lower() or "external hosts are reachable" in gw.detail.lower()
+
+
+def test_gateway_down_and_external_down_still_router_gateway() -> None:
+    # The genuine fault is preserved: gateway silent AND no external reachability
+    # (nothing traversed it) → router-gateway, and the "external also failed"
+    # evidence is now true by construction.
+    snap = SignalSnapshot(
+        gateway_reachable=False, dns_ok=False, ip_connectivity_ok=False,
+        control_hosts_ok=False, target_service_ok=False, default_route_present=True,
+    )
+    diagnosis = diagnose(snap)
+    assert diagnosis.boundary == "router-gateway"
+    assert diagnosis.confidence == 0.99
+
+
 def test_wan_gateway_classifies_correctly() -> None:
     # gateway up, IP and DNS both down → WAN connection failure, not router-local
     snap = SignalSnapshot(

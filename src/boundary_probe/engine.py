@@ -26,6 +26,22 @@ class Rule:
         return all(getattr(signals, field) == expected for field, expected in self.match.items())
 
 
+def _gateway_evidence(signals: SignalSnapshot) -> EvidenceItem:
+    """Gateway-health evidence that reflects *how* the gateway was judged healthy.
+
+    Only called from build functions that fire when ``gateway_functional`` is
+    True. If the gateway did not answer ICMP, forwarding was proven by reaching
+    an external host — say so rather than falsely claiming the gateway "is
+    reachable".
+    """
+    if signals.gateway_reachable:
+        return EvidenceItem("gateway", "Local gateway is reachable.")
+    return EvidenceItem(
+        "gateway",
+        "Gateway did not answer ICMP (likely filtered), but traffic is forwarding through it — external hosts are reachable.",
+    )
+
+
 def _local_device(_: SignalSnapshot) -> Diagnosis:
     return Diagnosis(
         boundary="local-device",
@@ -60,13 +76,13 @@ def _router_gateway(_: SignalSnapshot) -> Diagnosis:
     )
 
 
-def _wan_gateway(_: SignalSnapshot) -> Diagnosis:
+def _wan_gateway(signals: SignalSnapshot) -> Diagnosis:
     return Diagnosis(
         boundary="wan-gateway",
         confidence=0.94,
         summary="The local gateway is reachable, but IP connectivity and DNS are both failing — the WAN connection appears to be down.",
         evidence=[
-            EvidenceItem("gateway", "Local gateway responded."),
+            _gateway_evidence(signals),
             EvidenceItem("ip-connectivity", "Direct IP connectivity (canary ping) failed."),
             EvidenceItem("dns", "DNS resolution also failed."),
         ],
@@ -78,13 +94,13 @@ def _wan_gateway(_: SignalSnapshot) -> Diagnosis:
     )
 
 
-def _dns(_: SignalSnapshot) -> Diagnosis:
+def _dns(signals: SignalSnapshot) -> Diagnosis:
     return Diagnosis(
         boundary="dns",
         confidence=0.96,
         summary="Raw connectivity is available, but name resolution is failing.",
         evidence=[
-            EvidenceItem("gateway", "Gateway reachability is healthy."),
+            _gateway_evidence(signals),
             EvidenceItem("ip-connectivity", "Direct IP connectivity still works."),
             EvidenceItem("dns", "DNS lookups are failing or inconsistent."),
         ],
@@ -96,13 +112,13 @@ def _dns(_: SignalSnapshot) -> Diagnosis:
     )
 
 
-def _isp_upstream(_: SignalSnapshot) -> Diagnosis:
+def _isp_upstream(signals: SignalSnapshot) -> Diagnosis:
     return Diagnosis(
         boundary="isp-upstream",
         confidence=0.93,
         summary="The local network appears healthy, but loss is beginning after the local boundary across multiple destinations.",
         evidence=[
-            EvidenceItem("gateway", "Gateway reachability is healthy."),
+            _gateway_evidence(signals),
             EvidenceItem("dns", "DNS is working."),
             EvidenceItem("path", "Loss begins after hop 1."),
             EvidenceItem("breadth", "More than one external target shows the same degradation."),
@@ -132,7 +148,7 @@ def _remote_service(_: SignalSnapshot) -> Diagnosis:
     )
 
 
-def _healthy(_: SignalSnapshot) -> Diagnosis:
+def _healthy(signals: SignalSnapshot) -> Diagnosis:
     # Why a positive verdict exists at all:
     # The fault rules above only fire on a *detected* failure. Before this row,
     # an all-green connection matched nothing and fell through to `inconclusive`
@@ -149,7 +165,7 @@ def _healthy(_: SignalSnapshot) -> Diagnosis:
         confidence=0.9,
         summary="All checks passed: the gateway, DNS, direct connectivity, control hosts, and the target service are reachable with no path loss.",
         evidence=[
-            EvidenceItem("gateway", "Local gateway is reachable."),
+            _gateway_evidence(signals),
             EvidenceItem("dns", "Name resolution is working."),
             EvidenceItem("ip-connectivity", "Direct IP connectivity is healthy."),
             EvidenceItem("controls", "Known-good internet controls are reachable."),
@@ -185,28 +201,38 @@ def _inconclusive(signals: SignalSnapshot) -> Diagnosis:
 
 # Ordered narrowest-certain-first; the first matching row wins. local-device
 # precedes router-gateway so a missing default route is not absorbed by the
-# broader gateway-unreachable row. The final row matches everything (catch-all).
+# broader gateway-down row. The final row matches everything (catch-all).
+#
+# Gateway rows key on `gateway_functional` (gateway answered ICMP OR traffic
+# provably traversed it), NOT raw `gateway_reachable`. This is deliberate: a
+# gateway that filters ICMP echo to itself but forwards traffic normally is
+# common (WSL2 NAT, cloud VMs, hardened/corporate routers). Keying on
+# `gateway_reachable` alone falsely accused the LAN boundary at 0.99 confidence
+# whenever the gateway was reachable-through but not pingable, while DNS, the
+# canary, and control hosts were all green. `gateway_functional` ensures the
+# gateway is only blamed when external reachability *also* fails (see model
+# property for the full rationale).
 RULES: list[Rule] = [
-    Rule("local-device", {"gateway_reachable": False, "default_route_present": False}, _local_device),
-    Rule("router-gateway", {"gateway_reachable": False}, _router_gateway),
-    Rule("wan-gateway", {"gateway_reachable": True, "ip_connectivity_ok": False, "dns_ok": False}, _wan_gateway),
+    Rule("local-device", {"gateway_functional": False, "default_route_present": False}, _local_device),
+    Rule("router-gateway", {"gateway_functional": False}, _router_gateway),
+    Rule("wan-gateway", {"gateway_functional": True, "ip_connectivity_ok": False, "dns_ok": False}, _wan_gateway),
     Rule("dns", {"ip_connectivity_ok": True, "dns_ok": False}, _dns),
     Rule(
         "isp-upstream",
-        {"gateway_reachable": True, "dns_ok": True, "packet_loss_after_hop1": True, "packet_loss_multiple_targets": True},
+        {"gateway_functional": True, "dns_ok": True, "packet_loss_after_hop1": True, "packet_loss_multiple_targets": True},
         _isp_upstream,
     ),
     Rule(
         "remote-service",
-        {"gateway_reachable": True, "dns_ok": True, "control_hosts_ok": True, "target_service_ok": False},
+        {"gateway_functional": True, "dns_ok": True, "control_hosts_ok": True, "target_service_ok": False},
         _remote_service,
     ),
-    # Positive verdict: every signal green. Must precede the inconclusive
+    # Positive verdict: every fault signal green. Must precede the inconclusive
     # catch-all so an all-healthy connection is affirmed, not reported as unknown.
     Rule(
         "healthy",
         {
-            "gateway_reachable": True,
+            "gateway_functional": True,
             "dns_ok": True,
             "ip_connectivity_ok": True,
             "control_hosts_ok": True,

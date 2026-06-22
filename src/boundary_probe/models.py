@@ -17,6 +17,22 @@ class SignalSnapshot:
     packet_loss_after_hop1: bool = False
     packet_loss_multiple_targets: bool = False
 
+    @property
+    def gateway_functional(self) -> bool:
+        """Whether the gateway is functionally healthy (forwarding traffic).
+
+        True if the gateway answered ICMP directly (``gateway_reachable``) OR
+        traffic provably traversed it to reach an external host
+        (``ip_connectivity_ok`` or ``control_hosts_ok``). ICMP echo *to* a
+        gateway is an unreliable liveness signal — many gateways and NATs
+        filter or de-prioritize it while forwarding normally (the same reason
+        ``normalizer`` distrusts hop-1 ICMP for path loss). Reaching anything
+        beyond the gateway is direct proof it forwards, so an unanswered
+        gateway ping must not, on its own, accuse the LAN boundary. The engine
+        keys gateway-related rules on this, not on ``gateway_reachable``.
+        """
+        return self.gateway_reachable or self.ip_connectivity_ok or self.control_hosts_ok
+
 
 @dataclass(slots=True)
 class EvidenceItem:

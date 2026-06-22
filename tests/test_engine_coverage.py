@@ -62,9 +62,21 @@ def test_no_default_route_classifies_as_local_device() -> None:
 
 
 def test_gateway_down_with_route_present_stays_router_gateway() -> None:
-    # Default route exists but the gateway does not answer -> router-gateway boundary.
+    # Default route exists, the gateway does not answer, AND nothing external is
+    # reachable through it -> router-gateway boundary.
     snap = SignalSnapshot(
         gateway_reachable=False, dns_ok=False, ip_connectivity_ok=False,
         control_hosts_ok=False, target_service_ok=False, default_route_present=True,
     )
     assert diagnose(snap).boundary == "router-gateway"
+
+
+def test_forwarding_gateway_is_never_blamed_locally() -> None:
+    # Invariant pinning the ICMP-filtered-gateway false positive: if traffic
+    # provably traversed the gateway (the canary or control hosts are reachable),
+    # the gateway cannot be the accused boundary — regardless of whether it
+    # answered ICMP. Holds across all 2^8 signal combinations.
+    for snap in _all_snapshots():
+        if snap.ip_connectivity_ok or snap.control_hosts_ok:
+            boundary = diagnose(snap).boundary
+            assert boundary not in ("router-gateway", "local-device"), snap

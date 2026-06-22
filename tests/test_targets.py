@@ -59,8 +59,35 @@ def test_whitespace_only_raises():
         parse_target("   ")
 
 
-def test_ipv6_treated_as_hostname():
-    # IPv6 addresses use ":" as a delimiter, so partition(":") splits them before
-    # ipaddress.ip_address() can detect the IPv6Address type. They fall through as kind=host.
-    t = parse_target("::1")
-    assert t.kind == "host"
+def test_ipv6_literal_rejected():
+    # "::1".partition(":") yields an empty host_part; hostname validation now
+    # rejects it, which also finally honors the docstring's promise to reject
+    # IPv6 literals (previously it fell through as kind=host with an empty host).
+    with pytest.raises(ValueError):
+        parse_target("::1")
+
+
+# ---------------------------------------------------------------------------
+# Hostname validation (#36) — reject targets that would inject into argv or HTML
+# ---------------------------------------------------------------------------
+
+
+def test_rejects_script_breakout_payload():
+    with pytest.raises(ValueError):
+        parse_target("</script><img src=x onerror=alert(1)>")
+
+
+def test_rejects_leading_dash_host():
+    # Would inject as a flag into ping/tracert on Windows (no "--" separator).
+    with pytest.raises(ValueError):
+        parse_target("-t")
+
+
+def test_rejects_host_with_space():
+    with pytest.raises(ValueError):
+        parse_target("bad host")
+
+
+def test_rejects_url_with_empty_host():
+    with pytest.raises(ValueError):
+        parse_target("https:///path")

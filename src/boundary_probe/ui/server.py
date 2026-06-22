@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import http.server
+import secrets
 import socketserver
 import urllib.parse
 from http import HTTPStatus
@@ -20,13 +21,17 @@ class ProbeRequestHandler(http.server.BaseHTTPRequestHandler):
     def log_message(self, format: str, *args: object) -> None:  # noqa: A002
         pass  # suppress default stderr chatter
 
-    def _send_html(self, code: int, body: str) -> None:
+    def _send_html(self, code: int, body: str, *, script_nonce: str | None = None) -> None:
         encoded = body.encode("utf-8")
+        # Inline scripts are whitelisted by per-response nonce, not 'unsafe-inline',
+        # so an injected <script> or inline event handler cannot execute. Pages
+        # with no inline script get script-src 'none'.
+        script_src = f"'nonce-{script_nonce}'" if script_nonce else "'none'"
         self.send_response(code)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(encoded)))
         self.send_header("Content-Security-Policy",
-                         "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'")
+                         f"default-src 'self'; style-src 'unsafe-inline'; script-src {script_src}")
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.end_headers()
@@ -126,7 +131,8 @@ class ProbeRequestHandler(http.server.BaseHTTPRequestHandler):
         except ValueError as exc:
             self._send_html(400, render_error(f"Invalid target: {exc}", "/"))
             return
-        self._send_html(200, render_loading(target_str, no_path))
+        nonce = secrets.token_urlsafe(16)
+        self._send_html(200, render_loading(target_str, no_path, nonce=nonce), script_nonce=nonce)
 
     def _handle_api_diagnose(self) -> None:
         target_str, no_path = self._read_params()

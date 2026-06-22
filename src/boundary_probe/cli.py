@@ -133,6 +133,7 @@ def _print_config() -> None:
     print(f"  ip_connectivity   {cfg.ip_connectivity_s}s")
     print(f"  control_hosts     {cfg.control_hosts_s}s")
     print(f"  target_ping       {cfg.target_ping_s}s")
+    print(f"  target_tcp        {cfg.target_tcp_s}s")
     print(f"  tracert           {cfg.tracert_s}s")
 
 

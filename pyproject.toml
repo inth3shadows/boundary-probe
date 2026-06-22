@@ -11,7 +11,7 @@ requires-python = ">=3.11"
 license = {text = "MIT"}
 keywords = ["networking", "diagnostics", "ping", "traceroute", "dns", "cli"]
 dependencies = [
-    "rich>=13.0",
+    "rich>=13.0,<15",
 ]
 
 classifiers = [
@@ -53,3 +53,8 @@ markers = [
     "integration: hits real network (ping/tracert/DNS). Skipped by default.",
 ]
 addopts = "-m 'not integration'"
+# Fail on leaked resources (e.g. an unclosed sqlite connection) so they cannot
+# silently regress. ResourceWarnings are GC-timed and otherwise easy to miss.
+filterwarnings = [
+    "error::ResourceWarning",
+]

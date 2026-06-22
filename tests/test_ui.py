@@ -234,6 +234,33 @@ class TestCSRFProtection:
         assert status == 200
 
 
+class TestLoadingPageXSS:
+    def test_render_loading_has_no_script_breakout(self):
+        from boundary_probe.ui.templates import render_loading
+        payload = "</script><img src=x onerror=alert(document.domain)>"
+        html = render_loading(payload, no_path=False, nonce="testnonce")
+        # The attacker's </script> must not survive verbatim to break out of the
+        # inline <script> and inject following markup.
+        assert "</script><img" not in html
+
+    def test_diagnose_loading_csp_uses_nonce_not_unsafe_inline(self, ui_server):
+        host, port, _ = ui_server
+        conn = http.client.HTTPConnection(host, port, timeout=5)
+        body = urllib.parse.urlencode({"target": "8.8.8.8"})
+        conn.request("POST", "/diagnose", body,
+                     {"Content-Type": "application/x-www-form-urlencoded"})
+        resp = conn.getresponse()
+        page = resp.read().decode("utf-8")
+        csp = resp.getheader("Content-Security-Policy", "")
+        conn.close()
+        assert "nonce-" in csp
+        # script-src must no longer rely on 'unsafe-inline'
+        script_src = next((d for d in csp.split(";") if "script-src" in d), "")
+        assert "'unsafe-inline'" not in script_src
+        # the inline script carries the matching nonce
+        assert "<script nonce=" in page
+
+
 class TestUICLI:
     def test_ui_help(self):
         from io import StringIO

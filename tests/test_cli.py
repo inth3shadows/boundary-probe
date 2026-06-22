@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
-from contextlib import redirect_stdout
+from contextlib import closing, redirect_stdout
 from io import StringIO
 
 import pytest
@@ -55,7 +55,9 @@ def test_diagnose_persists_run(monkeypatch, tmp_db, fake_collection_result):
     monkeypatch.setattr("boundary_probe.cli.collect_signals", lambda *a, **kw: fake_collection_result)
     output = _run(["diagnose", "example.com"])
     assert "Run saved:" in output
-    with sqlite3.connect(str(tmp_db)) as c:
+    # `with sqlite3.connect(...)` is a transaction context, not a resource one —
+    # it does not close the connection. Use closing() so the handle is released.
+    with closing(sqlite3.connect(str(tmp_db))) as c:
         rows = list(c.execute("SELECT boundary FROM runs"))
     assert len(rows) == 1
     assert rows[0][0] == "remote-service"

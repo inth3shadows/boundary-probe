@@ -27,6 +27,7 @@ class ProbeConfig:
     ip_connectivity_s: float = 15.0
     control_hosts_s: float = 10.0
     target_ping_s: float = 8.0
+    target_tcp_s: float = 5.0
     tracert_s: float = 60.0
 
 
@@ -52,6 +53,7 @@ def _validate(cfg: ProbeConfig) -> None:
         ("ip_connectivity_s", cfg.ip_connectivity_s),
         ("control_hosts_s", cfg.control_hosts_s),
         ("target_ping_s", cfg.target_ping_s),
+        ("target_tcp_s", cfg.target_tcp_s),
         ("tracert_s", cfg.tracert_s),
     ):
         if val <= 0:
@@ -107,11 +109,19 @@ def load_config() -> ProbeConfig:
     timeouts = data.get("timeouts", {})
 
     raw_hosts = probes.get("control_hosts", None)
-    control_hosts = (
-        tuple(str(h) for h in raw_hosts)
-        if raw_hosts is not None
-        else _DEFAULTS.control_hosts
-    )
+    if raw_hosts is None:
+        control_hosts = _DEFAULTS.control_hosts
+    elif isinstance(raw_hosts, (list, tuple)):
+        control_hosts = tuple(str(h) for h in raw_hosts)
+    else:
+        # A scalar (e.g. control_hosts = "1.1.1.1") would otherwise char-iterate
+        # into bogus single-character hosts that silently pass validation.
+        print(
+            "error: config: control_hosts must be an array of strings, "
+            f"e.g. [\"1.1.1.1\", \"8.8.8.8\"] (got {type(raw_hosts).__name__})",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     try:
         cfg = ProbeConfig(
@@ -128,6 +138,7 @@ def load_config() -> ProbeConfig:
             ip_connectivity_s=float(timeouts.get("ip_connectivity_s", _DEFAULTS.ip_connectivity_s)),
             control_hosts_s=float(timeouts.get("control_hosts_s", _DEFAULTS.control_hosts_s)),
             target_ping_s=float(timeouts.get("target_ping_s", _DEFAULTS.target_ping_s)),
+            target_tcp_s=float(timeouts.get("target_tcp_s", _DEFAULTS.target_tcp_s)),
             tracert_s=float(timeouts.get("tracert_s", _DEFAULTS.tracert_s)),
         )
         _validate(cfg)

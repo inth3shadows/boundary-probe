@@ -299,12 +299,19 @@ def render_detail(row: sqlite3.Row) -> str:
     return _page(f"Run — {target_raw}", body)
 
 
-def render_loading(target: str, no_path: bool) -> str:
+def render_loading(target: str, no_path: bool, *, nonce: str = "") -> str:
     import json as _json
-    target_js = _json.dumps(target)
+
+    # json.dumps produces a valid JS string literal but does NOT escape "</",
+    # so a target containing "</script>" would close the inline <script> early
+    # and inject following markup. Escape the breakout sequence after encoding.
+    def _js_str(value: str) -> str:
+        return _json.dumps(value).replace("</", "<\\/")
+
+    target_js = _js_str(target)
     no_path_js = "true" if no_path else "false"
     body_val = urllib.parse.urlencode({"target": target, **({"no_path": "on"} if no_path else {})})
-    body_js = _json.dumps(body_val)
+    body_js = _js_str(body_val)
 
     script = f"""
 const TARGET = {target_js};
@@ -401,7 +408,7 @@ fetch("/api/diagnose", {{
         '  </div>\n'
         '  <p style="font-size:12px;color:#888;margin-top:8px">'
         'Catch the packets while you wait — score: <strong id="score">0</strong></p>\n'
-        f'  <script>{script}</script>\n'
+        f'  <script nonce="{_h(nonce)}">{script}</script>\n'
         '</div>'
     )
     return _page(f"Diagnosing {target}…", body)

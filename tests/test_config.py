@@ -63,6 +63,17 @@ def test_toml_overrides_control_hosts(monkeypatch, tmp_path):
     assert cfg.canary_ip == _DEFAULTS.canary_ip
 
 
+def test_scalar_control_hosts_is_rejected_not_char_iterated(monkeypatch, tmp_path):
+    # A natural TOML mistake: writing a scalar instead of an array. The old
+    # behavior char-iterated the string into 7 single-character "hosts"
+    # ("1", ".", "1", ...) that silently passed validation and would be pinged
+    # as bogus targets. A scalar must be rejected at the boundary (#36).
+    _write_config(tmp_path, '[probes]\ncontrol_hosts = "1.1.1.1"\n')
+    monkeypatch.setenv("BOUNDARY_PROBE_CONFIG", str(tmp_path / "config.toml"))
+    with pytest.raises(SystemExit):
+        load_config()
+
+
 def test_toml_overrides_threshold(monkeypatch, tmp_path):
     _write_config(tmp_path, "[thresholds]\npath_loss_pct = 35.0\n")
     monkeypatch.setenv("BOUNDARY_PROBE_CONFIG", str(tmp_path / "config.toml"))
@@ -77,6 +88,20 @@ def test_toml_overrides_timeout(monkeypatch, tmp_path):
     cfg = load_config()
     assert cfg.tracert_s == 60.0
     assert cfg.gateway_ping_s == _DEFAULTS.gateway_ping_s
+
+
+def test_toml_overrides_target_tcp_timeout(monkeypatch, tmp_path):
+    _write_config(tmp_path, "[timeouts]\ntarget_tcp_s = 3.0\n")
+    monkeypatch.setenv("BOUNDARY_PROBE_CONFIG", str(tmp_path / "config.toml"))
+    cfg = load_config()
+    assert cfg.target_tcp_s == 3.0
+
+
+def test_nonpositive_target_tcp_timeout_exits(monkeypatch, tmp_path):
+    _write_config(tmp_path, "[timeouts]\ntarget_tcp_s = 0\n")
+    monkeypatch.setenv("BOUNDARY_PROBE_CONFIG", str(tmp_path / "config.toml"))
+    with pytest.raises(SystemExit):
+        load_config()
 
 
 def test_toml_overrides_quorum(monkeypatch, tmp_path):

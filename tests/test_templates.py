@@ -34,6 +34,14 @@ class TestRenderEscalation:
         text = render_escalation(row)
         assert "SERVICE PROVIDER ESCALATION REPORT" in text
 
+    def test_confidence_is_band_first_and_labeled_a_prior(self, tmp_db, fake_collection_result):
+        # The escalation report goes to an ISP rep — lead with the band and mark
+        # the float a prior, not a measured rate, so it reads as honest evidence.
+        row, _ = _make_row(tmp_db, fake_collection_result)
+        text = render_escalation(row)
+        assert "Confidence: Moderate (0.95 prior" in text
+        assert "not a measured rate" in text
+
     def test_isp_title(self, tmp_db, fake_collection_result, monkeypatch):
         from boundary_probe.models import SignalSnapshot
         from boundary_probe.collectors.orchestrator import CollectionResult

@@ -112,7 +112,7 @@ def _format_body(title: str, action: str, row: sqlite3.Row) -> str:
         "",
         "DIAGNOSIS",
         f"  Boundary:   {boundary}",
-        f"  Confidence: {conf:.2f} ({band})",
+        f"  Confidence: {band} ({conf:.2f} prior — signal-isolation strength, not a measured rate)",
         f"  Summary:    {summary}",
         "",
         "TECHNICAL EVIDENCE",

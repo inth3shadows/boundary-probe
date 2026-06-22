@@ -14,7 +14,7 @@ from boundary_probe.collectors.orchestrator import CollectionResult
 from boundary_probe.config import get_config_path, load_config
 from boundary_probe.engine import diagnose
 from boundary_probe.models import SignalSnapshot
-from boundary_probe.store import connect, fetch_recent, fetch_run, insert_run
+from boundary_probe.store import confidence_band, connect, fetch_recent, fetch_run, insert_run
 from boundary_probe.targets import ParsedTarget, parse_target
 
 
@@ -258,7 +258,9 @@ def _print_diagnose(target: str, as_json: bool, history: int | None, skip_path: 
 
     print(f"Target:     {parsed.raw} ({parsed.kind})")
     print(f"Boundary:   {diagnosis.boundary}")
-    print(f"Confidence: {diagnosis.confidence:.2f}")
+    # Lead with the band; the float is a heuristic prior (signal-isolation
+    # strength), not a measured error rate — see docs/CALIBRATION.md.
+    print(f"Confidence: {confidence_band(diagnosis.confidence)} ({diagnosis.confidence:.2f} prior)")
     print(f"Summary:    {diagnosis.summary}")
     print("")
     print("Evidence:")

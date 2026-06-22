@@ -1,0 +1,87 @@
+{
+  "scenario": "remote-service-real",
+  "expected_boundary": "remote-service",
+  "captured_at": "2026-06-22T19:15:43Z",
+  "target": "127.0.0.1:9999",
+  "signals": {
+    "gateway_reachable": false,
+    "dns_ok": true,
+    "ip_connectivity_ok": true,
+    "control_hosts_ok": true,
+    "target_service_ok": false,
+    "default_route_present": true,
+    "packet_loss_after_hop1": false,
+    "packet_loss_multiple_targets": false
+  },
+  "measurements": {
+    "gateway": {
+      "reachable": false,
+      "gateway_ip": "172.31.96.1",
+      "rtt_ms": null,
+      "note": "only 0/4 ping replies from gateway"
+    },
+    "dns": {
+      "ok": true,
+      "resolved_ips": [
+        "127.0.0.1"
+      ],
+      "resolver_used": null,
+      "elapsed_ms": 0,
+      "note": "target is already an IP address"
+    },
+    "ip_connectivity": {
+      "ok": true,
+      "target_ip": "1.1.1.1",
+      "loss_pct": 0.0,
+      "avg_rtt_ms": 18.454,
+      "note": ""
+    },
+    "control_hosts": {
+      "all_ok": true,
+      "ok_count": 4,
+      "total": 4,
+      "results": [
+        {
+          "host": "1.1.1.1",
+          "reachable": true,
+          "loss_pct": 0.0,
+          "avg_rtt_ms": 18.364
+        },
+        {
+          "host": "8.8.8.8",
+          "reachable": true,
+          "loss_pct": 0.0,
+          "avg_rtt_ms": 16.938
+        },
+        {
+          "host": "8.8.4.4",
+          "reachable": true,
+          "loss_pct": 0.0,
+          "avg_rtt_ms": 16.25
+        },
+        {
+          "host": "cloudflare.com",
+          "reachable": true,
+          "loss_pct": 0.0,
+          "avg_rtt_ms": 18.219
+        }
+      ],
+      "note": ""
+    },
+    "target_service": {
+      "ok": false,
+      "method": "tcp-connect",
+      "target_host": "127.0.0.1",
+      "target_port": 9999,
+      "elapsed_ms": 3,
+      "note": "[Errno 111] Connection refused"
+    },
+    "path_primary": {
+      "raw_hops": [],
+      "target": "127.0.0.1",
+      "completed": false,
+      "note": "skipped via --no-path"
+    },
+    "path_secondary": null
+  }
+}

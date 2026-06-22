@@ -15,7 +15,7 @@ from boundary_probe.collectors import collect_signals
 from boundary_probe.collectors.orchestrator import CollectionResult
 from boundary_probe.engine import diagnose
 from boundary_probe.models import Diagnosis
-from boundary_probe.store import connect, insert_run
+from boundary_probe.store import confidence_band, connect, insert_run
 from boundary_probe.targets import ParsedTarget
 
 
@@ -83,7 +83,10 @@ def _render_panel(
 
     diag_table = Table.grid(padding=(0, 1))
     diag_table.add_row(Text("Boundary:", style="dim"), Text(diag.boundary, style=f"bold {color}"))
-    diag_table.add_row(Text("Confidence:", style="dim"), Text(f"{diag.confidence:.2f}"))
+    diag_table.add_row(
+        Text("Confidence:", style="dim"),
+        Text(f"{confidence_band(diag.confidence)} ({diag.confidence:.2f} prior)"),
+    )
     diag_table.add_row(Text("Summary:", style="dim"), Text(diag.summary))
 
     hist_window = min(len(history), 8)

@@ -31,7 +31,7 @@ A typical result looks like this:
 ```
 Target:     example.com (host)
 Boundary:   remote-service
-Confidence: 0.95
+Confidence: Moderate (0.95 prior)
 Summary:    General internet health is good, but the target service is failing specifically.
 
 Evidence:
@@ -80,11 +80,15 @@ boundary-probe diagnose example.com --json
 
 ### Confidence Levels
 
-The confidence score (0.00–1.00) reflects how strongly the collected signals point to one boundary:
+Confidence is shown as a **band** (the value to act on), with the underlying
+number in parentheses labeled a *prior*. That number reflects how tightly the
+signal pattern isolates one boundary — it is a **heuristic prior, not a measured
+error rate**. The priors have not yet been calibrated against real-world outcomes
+(see `docs/CALIBRATION.md`); treat the band, not the second decimal, as the signal.
 
-- **0.97 and above (High)** — Multiple independent signals agree. Act on this.
-- **0.90–0.96 (Moderate)** — Signals mostly agree, but one or two are ambiguous. Follow the remediation steps; re-run if in doubt.
-- **Below 0.90 (Low)** — Signals are insufficient or conflicting. The `inconclusive` result always falls here. Re-run or collect more information.
+- **High (0.97 and above)** — Multiple independent signals agree. Act on this.
+- **Moderate (0.90–0.96)** — Signals mostly agree, but one or two are ambiguous. Follow the remediation steps; re-run if in doubt.
+- **Low (below 0.90)** — Signals are insufficient or conflicting. The `inconclusive` result always falls here. Re-run or collect more information.
 
 ## Viewing Run History
 

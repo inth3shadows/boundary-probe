@@ -74,6 +74,16 @@ Capture a fixture from a live run (for testing or sharing):
 boundary-probe capture my-snapshot --target example.com
 ```
 
+Configuration is optional — the defaults work out of the box. To view the
+effective settings and the config file path:
+
+```bash
+boundary-probe config
+```
+
+See [Configuration](USAGE.md#configuration) for the full TOML schema (probe
+hosts, thresholds, timeouts) and the `BOUNDARY_PROBE_CONFIG` override.
+
 Run tests:
 
 ```bash

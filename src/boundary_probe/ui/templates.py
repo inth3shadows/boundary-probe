@@ -281,8 +281,8 @@ def render_detail(row: sqlite3.Row) -> str:
         '  <div class="blabel">Boundary</div>\n'
         f'  <div class="bvalue">{_h(boundary)}</div>\n'
         "</div>\n"
-        f'<span class="conf-note">Confidence {conf:.2f} — '
-        f'<span class="{bc}">{_h(band)}</span></span>\n'
+        f'<span class="conf-note">Confidence <span class="{bc}">{_h(band)}</span> '
+        f'({conf:.2f} prior)</span>\n'
         "<h2>Summary</h2>\n"
         f"<p>{_h(summary)}</p>\n"
         "<h2>Evidence</h2>\n"

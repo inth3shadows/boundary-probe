@@ -21,6 +21,32 @@
 - [x] ~~Config file documentation~~ — **done** (2026-06-22): `USAGE.md` now has a `## Configuration` section documenting the full TOML schema (all 14 `ProbeConfig` fields across `[probes]`/`[thresholds]`/`[timeouts]` with defaults + validation), the platform-default paths, the `BOUNDARY_PROBE_CONFIG` override, and missing/invalid-file behavior. README Quick Start links to it. All 14 fields verified consumed (no dead knobs).
 - [x] ~~Add `local-device` detection rule~~ — **done** (`31abd59`): the route table with no default gateway now classifies as `local-device` instead of mis-classifying as `router-gateway`.
 
+## Post-v1: confidence calibration (the real maturity gate)
+
+The per-verdict confidence floats (0.90–0.99) are **heuristic priors, not measured
+rates**. v1 ships honest about this: the UI/CLI/escalation report lead with the
+**band** and label the float a "prior" (done 2026-06-22). What remains, deferred
+post-v1 (decided 2026-06-22 via coach + expert panel — chose "ship honest,
+calibrate continuously" over blocking the release):
+
+- [ ] **Fault-injection capture harness (option C).** Produce ground-truth fixtures
+  for the 5 boundaries a healthy machine can't reproduce (`local-device`,
+  `router-gateway`, `wan-gateway`, `dns`, `isp-upstream`) by *inducing* the fault:
+  `tc/netem` (loss/latency), `iptables`/firewall drop (gateway/WAN), blackhole DNS.
+  **Ground truth is valid because the human knows what they broke** — NOT from the
+  classifier's own verdict (that would be circular). Caveat (data-eng): injected
+  signal fingerprints may differ from real outages (silent drop vs ICMP-unreachable
+  from the router) — watch the `path_primary`/traceroute fingerprint.
+- [ ] **Calibrate the raw `measurements`, not just the 5 booleans.** `scripts/calibrate.py`
+  currently reconstructs the snapshot and re-runs `diagnose` — only 5 bits per fixture.
+  Add a pass checking whether captured measurement distributions (RTT, loss %, hop
+  counts) match the engine's threshold assumptions — miscalibration shows up there
+  first, before the boolean layer fires wrong.
+- [ ] **Mind the sampling bias (statistician's warning).** The easy-to-capture
+  boundaries (`healthy`, `remote-service`) are where calibration is *least* needed;
+  the high-confidence/high-harm ones (`router-gateway` 0.99, `isp-upstream` 0.93) are
+  hardest to fixture. Don't mistake a convincing table with blank rows for evidence.
+
 ## Nice-to-have
 - [ ] LLM/expert overlay — **backlogged (cost-gated)**: deferred until a better plan exists; consistent with `docs/technical-direction.md` (LLM layer comes after rules are calibrated). It also costs per-call LLM spend, so it waits on a clear value case.
 - [ ] Exportable support bundle: `boundary-probe escalate <uuid>` produces a report but there is no single-file export (JSON + evidence + run metadata) that a user could attach to a support ticket.

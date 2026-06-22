@@ -27,6 +27,15 @@ def test_diagnose_outputs_expected_boundary(monkeypatch, tmp_db, fake_collection
     assert "Boundary:   remote-service" in output
 
 
+def test_diagnose_confidence_is_band_first_with_prior_label(monkeypatch, tmp_db, fake_collection_result):
+    # Confidence leads with the band; the float is demoted and labeled a prior,
+    # not a measured rate (calibration decision — see docs/CALIBRATION.md).
+    monkeypatch.setattr("boundary_probe.cli.collect_signals", lambda *a, **kw: fake_collection_result)
+    output = _run(["diagnose", "remote-service"])
+    # remote-service is 0.95 -> Moderate band
+    assert "Confidence: Moderate (0.95 prior)" in output
+
+
 def test_roadmap_command_runs():
     output = _run(["roadmap"])
     assert "Boundary Probe roadmap:" in output

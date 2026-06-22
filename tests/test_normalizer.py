@@ -51,6 +51,21 @@ def test_tracert_edge_router_only_does_not_trigger():
     assert result.packet_loss_after_hop1 is False
 
 
+def test_lossy_second_to_last_hop_with_healthy_destination_does_not_trigger():
+    # A single mid-path router de-prioritizes ICMP, but the destination (final
+    # hop) responds cleanly. The loss did not persist to the target, so it must
+    # NOT be flagged — the absent look-ahead beyond the destination is no
+    # evidence of loss, only proof the trace ended.
+    hops = [
+        _hop(1, 0.0),
+        _hop(2, 0.0),
+        _hop(3, 50.0),   # lossy, second-to-last
+        _hop(4, 0.0),    # destination, healthy
+    ]
+    result = normalize_path_signals(hops)
+    assert result.packet_loss_after_hop1 is False
+
+
 # ---------------------------------------------------------------------------
 # Sustained loss from hop 3 must trigger
 # ---------------------------------------------------------------------------

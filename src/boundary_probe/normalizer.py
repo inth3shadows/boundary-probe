@@ -79,6 +79,7 @@ def _has_persistent_loss(hops: list[dict], threshold: float = _LOSS_THRESHOLD_PC
         return False
 
     hop_by_index = {h["index"]: h for h in hops}
+    last_index = max(hop_by_index)
 
     for hop in hops:
         idx = hop["index"]
@@ -89,11 +90,20 @@ def _has_persistent_loss(hops: list[dict], threshold: float = _LOSS_THRESHOLD_PC
         if not current_lossy:
             continue
 
+        # The destination (final hop) showing loss is loss reaching the target;
+        # count it on its own — there is nothing downstream to corroborate.
+        if idx == last_index:
+            return True
+
+        # Otherwise the loss must persist into an *observed* downstream hop. An
+        # absent look-ahead index means past the end of the trace, not loss —
+        # treating it as lossy would re-flag an isolated mid-path hop whose
+        # destination is healthy, the exact case this module exists to exclude.
         next1 = hop_by_index.get(idx + 1)
         next2 = hop_by_index.get(idx + 2)
 
-        next1_lossy = next1["loss_pct"] > threshold if next1 is not None else True
-        next2_lossy = next2["loss_pct"] > threshold if next2 is not None else True
+        next1_lossy = next1 is not None and next1["loss_pct"] > threshold
+        next2_lossy = next2 is not None and next2["loss_pct"] > threshold
 
         if next1_lossy or next2_lossy:
             return True

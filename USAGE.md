@@ -185,6 +185,7 @@ gateway_ping_s = 8.0       # gateway ping
 ip_connectivity_s = 15.0   # canary IP ping
 control_hosts_s = 10.0     # control-host probes
 target_ping_s = 8.0        # target ping
+target_tcp_s = 5.0         # target TCP connect (when a port is known)
 tracert_s = 60.0           # traceroute ceiling
 ```
 

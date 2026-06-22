@@ -90,6 +90,20 @@ def test_toml_overrides_timeout(monkeypatch, tmp_path):
     assert cfg.gateway_ping_s == _DEFAULTS.gateway_ping_s
 
 
+def test_toml_overrides_target_tcp_timeout(monkeypatch, tmp_path):
+    _write_config(tmp_path, "[timeouts]\ntarget_tcp_s = 3.0\n")
+    monkeypatch.setenv("BOUNDARY_PROBE_CONFIG", str(tmp_path / "config.toml"))
+    cfg = load_config()
+    assert cfg.target_tcp_s == 3.0
+
+
+def test_nonpositive_target_tcp_timeout_exits(monkeypatch, tmp_path):
+    _write_config(tmp_path, "[timeouts]\ntarget_tcp_s = 0\n")
+    monkeypatch.setenv("BOUNDARY_PROBE_CONFIG", str(tmp_path / "config.toml"))
+    with pytest.raises(SystemExit):
+        load_config()
+
+
 def test_toml_overrides_quorum(monkeypatch, tmp_path):
     _write_config(tmp_path, "[probes]\ncontrol_quorum = 2\n")
     monkeypatch.setenv("BOUNDARY_PROBE_CONFIG", str(tmp_path / "config.toml"))

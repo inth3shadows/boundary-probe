@@ -29,25 +29,27 @@ def collect_target_service(
     *,
     loss_pct_threshold: float | None = None,
     timeout_s: float | None = None,
+    tcp_timeout_s: float | None = None,
 ) -> TargetServiceSlice:
     """TCP connect if port is known; otherwise ping the host."""
     port: int | None = parsed_target.port
     if port is None and parsed_target.scheme in _SCHEME_PORTS:
         port = _SCHEME_PORTS[parsed_target.scheme]
 
-    if port is not None:
-        return _tcp_connect(parsed_target.host, port)
-
     cfg = load_config()
+    if port is not None:
+        _tcp = tcp_timeout_s if tcp_timeout_s is not None else cfg.target_tcp_s
+        return _tcp_connect(parsed_target.host, port, _tcp)
+
     _loss_pct = loss_pct_threshold if loss_pct_threshold is not None else cfg.ip_loss_pct
     _timeout = timeout_s if timeout_s is not None else cfg.target_ping_s
     return _ping_host(parsed_target.host, runner or DefaultRunner(), _loss_pct, _timeout)
 
 
-def _tcp_connect(host: str, port: int) -> TargetServiceSlice:
+def _tcp_connect(host: str, port: int, timeout_s: float) -> TargetServiceSlice:
     t0 = time.monotonic()
     try:
-        with socket.create_connection((host, port), timeout=5.0):
+        with socket.create_connection((host, port), timeout=timeout_s):
             elapsed_ms = int((time.monotonic() - t0) * 1000)
             return TargetServiceSlice(ok=True, method="tcp-connect", target_host=host,
                                       target_port=port, elapsed_ms=elapsed_ms, note="")

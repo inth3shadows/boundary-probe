@@ -1,24 +1,24 @@
 {
-  "scenario": "router-down",
-  "captured_at": "2026-06-22T20:57:49Z",
+  "scenario": "healthy",
+  "captured_at": "2026-06-22T20:57:20Z",
   "capture_method": "injected",
   "target": "1.1.1.1",
   "signals": {
-    "gateway_reachable": false,
+    "gateway_reachable": true,
     "dns_ok": true,
-    "ip_connectivity_ok": false,
-    "control_hosts_ok": false,
-    "target_service_ok": false,
+    "ip_connectivity_ok": true,
+    "control_hosts_ok": true,
+    "target_service_ok": true,
     "default_route_present": true,
     "packet_loss_after_hop1": false,
     "packet_loss_multiple_targets": false
   },
   "measurements": {
     "gateway": {
-      "reachable": false,
+      "reachable": true,
       "gateway_ip": "10.200.0.1",
-      "rtt_ms": null,
-      "note": "unrecognized output format from ping"
+      "rtt_ms": 0.052,
+      "note": ""
     },
     "dns": {
       "ok": true,
@@ -30,51 +30,51 @@
       "note": "target is already an IP address"
     },
     "ip_connectivity": {
-      "ok": false,
+      "ok": true,
       "target_ip": "1.1.1.1",
-      "loss_pct": 100.0,
-      "avg_rtt_ms": null,
-      "note": "unrecognized output format from ping"
+      "loss_pct": 0.0,
+      "avg_rtt_ms": 18.392,
+      "note": ""
     },
     "control_hosts": {
-      "all_ok": false,
-      "ok_count": 0,
+      "all_ok": true,
+      "ok_count": 4,
       "total": 4,
       "results": [
         {
           "host": "1.1.1.1",
-          "reachable": false,
-          "loss_pct": 100.0,
-          "avg_rtt_ms": null
+          "reachable": true,
+          "loss_pct": 0.0,
+          "avg_rtt_ms": 18.034
         },
         {
           "host": "8.8.8.8",
-          "reachable": false,
-          "loss_pct": 100.0,
-          "avg_rtt_ms": null
+          "reachable": true,
+          "loss_pct": 0.0,
+          "avg_rtt_ms": 16.105
         },
         {
           "host": "8.8.4.4",
-          "reachable": false,
-          "loss_pct": 100.0,
-          "avg_rtt_ms": null
+          "reachable": true,
+          "loss_pct": 0.0,
+          "avg_rtt_ms": 16.273
         },
         {
           "host": "cloudflare.com",
-          "reachable": false,
-          "loss_pct": 100.0,
-          "avg_rtt_ms": null
+          "reachable": true,
+          "loss_pct": 0.0,
+          "avg_rtt_ms": 17.861
         }
       ],
-      "note": "only 0/4 control hosts reachable"
+      "note": ""
     },
     "target_service": {
-      "ok": false,
+      "ok": true,
       "method": "ping",
       "target_host": "1.1.1.1",
       "target_port": null,
-      "elapsed_ms": 4049,
-      "note": "100% packet loss pinging 1.1.1.1"
+      "elapsed_ms": 3027,
+      "note": ""
     },
     "path_primary": {
       "raw_hops": [],
@@ -84,5 +84,5 @@
     },
     "path_secondary": null
   },
-  "expected_boundary": "router-gateway"
+  "expected_boundary": "healthy"
 }

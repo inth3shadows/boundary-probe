@@ -1,11 +1,11 @@
 {
-  "scenario": "router-down",
-  "captured_at": "2026-06-22T20:57:49Z",
+  "scenario": "wan-down",
+  "captured_at": "2026-06-22T20:58:13Z",
   "capture_method": "injected",
-  "target": "1.1.1.1",
+  "target": "example.com",
   "signals": {
-    "gateway_reachable": false,
-    "dns_ok": true,
+    "gateway_reachable": true,
+    "dns_ok": false,
     "ip_connectivity_ok": false,
     "control_hosts_ok": false,
     "target_service_ok": false,
@@ -15,26 +15,24 @@
   },
   "measurements": {
     "gateway": {
-      "reachable": false,
+      "reachable": true,
       "gateway_ip": "10.200.0.1",
-      "rtt_ms": null,
-      "note": "unrecognized output format from ping"
+      "rtt_ms": 0.074,
+      "note": ""
     },
     "dns": {
-      "ok": true,
-      "resolved_ips": [
-        "1.1.1.1"
-      ],
+      "ok": false,
+      "resolved_ips": [],
       "resolver_used": null,
-      "elapsed_ms": 0,
-      "note": "target is already an IP address"
+      "elapsed_ms": 1,
+      "note": "[Errno -3] Temporary failure in name resolution"
     },
     "ip_connectivity": {
       "ok": false,
       "target_ip": "1.1.1.1",
       "loss_pct": 100.0,
       "avg_rtt_ms": null,
-      "note": "unrecognized output format from ping"
+      "note": "100% packet loss to 1.1.1.1"
     },
     "control_hosts": {
       "all_ok": false,
@@ -71,18 +69,18 @@
     "target_service": {
       "ok": false,
       "method": "ping",
-      "target_host": "1.1.1.1",
+      "target_host": "example.com",
       "target_port": null,
-      "elapsed_ms": 4049,
-      "note": "100% packet loss pinging 1.1.1.1"
+      "elapsed_ms": 3,
+      "note": "100% packet loss pinging example.com"
     },
     "path_primary": {
       "raw_hops": [],
-      "target": "1.1.1.1",
+      "target": "example.com",
       "completed": false,
       "note": "skipped via --no-path"
     },
     "path_secondary": null
   },
-  "expected_boundary": "router-gateway"
+  "expected_boundary": "wan-gateway"
 }

@@ -1,6 +1,6 @@
 {
-  "scenario": "router-down",
-  "captured_at": "2026-06-22T20:57:49Z",
+  "scenario": "local-device",
+  "captured_at": "2026-06-22T20:57:21Z",
   "capture_method": "injected",
   "target": "1.1.1.1",
   "signals": {
@@ -9,16 +9,16 @@
     "ip_connectivity_ok": false,
     "control_hosts_ok": false,
     "target_service_ok": false,
-    "default_route_present": true,
+    "default_route_present": false,
     "packet_loss_after_hop1": false,
     "packet_loss_multiple_targets": false
   },
   "measurements": {
     "gateway": {
       "reachable": false,
-      "gateway_ip": "10.200.0.1",
+      "gateway_ip": null,
       "rtt_ms": null,
-      "note": "unrecognized output format from ping"
+      "note": "could not determine default gateway from route table"
     },
     "dns": {
       "ok": true,
@@ -73,7 +73,7 @@
       "method": "ping",
       "target_host": "1.1.1.1",
       "target_port": null,
-      "elapsed_ms": 4049,
+      "elapsed_ms": 3,
       "note": "100% packet loss pinging 1.1.1.1"
     },
     "path_primary": {
@@ -84,5 +84,5 @@
     },
     "path_secondary": null
   },
-  "expected_boundary": "router-gateway"
+  "expected_boundary": "local-device"
 }

@@ -111,7 +111,11 @@ If you want to save a snapshot of current network conditions for sharing or late
 boundary-probe capture my-snapshot --target example.com
 ```
 
-This saves a small JSON file to `tests/fixtures/my-snapshot.json`. It contains the seven true/false signals that describe your network state at the time of capture — not raw packet data.
+This saves a JSON file to `tests/fixtures/my-snapshot.json`. It records both the
+diagnostic signals (the true/false flags the engine reads) and the underlying
+measurements — gateway RTT, packet-loss percentages, resolved DNS addresses,
+traceroute hops, and timings — so the capture can be replayed for analysis or used
+to calibrate confidence. It does not store raw packet captures.
 
 ## What to Do When Something Breaks
 

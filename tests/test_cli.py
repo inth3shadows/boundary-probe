@@ -111,61 +111,45 @@ def test_history_zero_errors(tmp_db, capsys):
     assert exc.value.code == 2
 
 
-def test_capture_writes_fixture(monkeypatch, tmp_db, fake_collection_result, tmp_path):
+def test_build_capture_payload_includes_signals_and_measurements(fake_collection_result):
+    # Exercises the REAL payload builder (the old test asserted against a copy).
+    from boundary_probe.cli import _build_capture_payload
+    from boundary_probe.targets import parse_target
+
+    parsed = parse_target("example.com")
+    payload = _build_capture_payload("scn", parsed, fake_collection_result, "2026-06-21T00:00:00Z")
+
+    # signals block reconstructs the snapshot (all 8 flags present)
+    assert payload["signals"] == {
+        "gateway_reachable": True, "dns_ok": True, "ip_connectivity_ok": True,
+        "control_hosts_ok": True, "target_service_ok": False, "default_route_present": True,
+        "packet_loss_after_hop1": False, "packet_loss_multiple_targets": False,
+    }
+    # measurements preserve the raw per-collector data the booleans discard
+    m = payload["measurements"]
+    assert m["gateway"]["rtt_ms"] == 2.0
+    assert m["gateway"]["gateway_ip"] == "192.168.1.1"
+    assert m["dns"]["resolved_ips"] == ["93.184.216.34"]
+    assert m["ip_connectivity"]["loss_pct"] == 0.0
+    assert len(m["control_hosts"]["results"]) == 4
+    assert "raw_hops" in m["path_primary"]
+    assert payload["captured_at"] == "2026-06-21T00:00:00Z"
+    assert payload["target"] == "example.com"
+
+
+def test_capture_writes_enriched_fixture(monkeypatch, tmp_db, fake_collection_result, tmp_path):
+    # End-to-end through the real _print_capture: signals + measurements written and round-tripped.
     import json
 
-    fixture_dir = tmp_path / "fixtures"
-    fixture_dir.mkdir()
-    fixture_file = fixture_dir / "test-capture.json"
+    monkeypatch.setattr("boundary_probe.cli.collect_signals", lambda *a, **kw: fake_collection_result)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "tests" / "fixtures").mkdir(parents=True)
 
-    original_write = None
-
-    def fake_collect(*a, **kw):
-        return fake_collection_result
-
-    def fake_write_text(content, encoding="utf-8"):
-        fixture_file.write_text(content, encoding=encoding)
-
-    monkeypatch.setattr("boundary_probe.cli.collect_signals", fake_collect)
-
-    # Patch Path to write to our tmp dir instead of tests/fixtures
-    import boundary_probe.cli as cli_mod
-    original_path = cli_mod.Path
-
-    def patched_path(*args):
-        p = original_path(*args)
-        if "tests/fixtures" in str(p):
-            return fixture_file.parent / p.name
-        return p
-
-    # Simplest approach: directly monkeypatch the fixture path used in _print_capture
-    # by redirecting the write call
-    calls = []
-
-    def fake_capture(name, target, skip_path):
-        result = fake_collect(None)
-        snap = result.snapshot
-        payload = {
-            "scenario": name,
-            "gateway_reachable": snap.gateway_reachable,
-            "dns_ok": snap.dns_ok,
-            "ip_connectivity_ok": snap.ip_connectivity_ok,
-            "control_hosts_ok": snap.control_hosts_ok,
-            "target_service_ok": snap.target_service_ok,
-            "packet_loss_after_hop1": snap.packet_loss_after_hop1,
-            "packet_loss_multiple_targets": snap.packet_loss_multiple_targets,
-        }
-        fixture_file.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-        calls.append(name)
-        print(f"captured fixture: {fixture_file}")
-
-    monkeypatch.setattr("boundary_probe.cli._print_capture", fake_capture)
-    output = _run(["capture", "test-capture", "--target", "1.1.1.1"])
+    output = _run(["capture", "scn", "--target", "1.1.1.1"])
     assert "captured fixture" in output
-    assert calls == ["test-capture"]
-    data = json.loads(fixture_file.read_text(encoding="utf-8"))
-    assert data["scenario"] == "test-capture"
-    assert "gateway_reachable" in data
+    data = json.loads((tmp_path / "tests" / "fixtures" / "scn.json").read_text(encoding="utf-8"))
+    assert set(data) == {"scenario", "captured_at", "target", "signals", "measurements"}
+    assert data["measurements"]["gateway"]["rtt_ms"] == 2.0
 
 
 # ---------------------------------------------------------------------------
@@ -252,4 +236,4 @@ def test_capture_real_roundtrip_with_no_default_route(monkeypatch, tmp_db, fake_
     output = _run(["capture", "localdev", "--target", "1.1.1.1"])
     assert "captured fixture" in output
     data = json.loads((tmp_path / "tests" / "fixtures" / "localdev.json").read_text(encoding="utf-8"))
-    assert data["default_route_present"] is False
+    assert data["signals"]["default_route_present"] is False

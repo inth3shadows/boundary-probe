@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import re
 import subprocess
@@ -14,7 +15,7 @@ from boundary_probe.config import get_config_path, load_config
 from boundary_probe.engine import diagnose
 from boundary_probe.models import SignalSnapshot
 from boundary_probe.store import connect, fetch_recent, fetch_run, insert_run
-from boundary_probe.targets import parse_target
+from boundary_probe.targets import ParsedTarget, parse_target
 
 
 _PLATFORM: str = sys.platform
@@ -296,6 +297,34 @@ def _escalate(run_uuid: str, copy: bool, output: str | None, no_file: bool) -> N
             print("warning: clipboard tool not found; copy skipped.", file=sys.stderr)
 
 
+def _build_capture_payload(
+    name: str, parsed: ParsedTarget, result: CollectionResult, captured_at: str
+) -> dict:
+    """Serialize a collection run into an enriched fixture payload.
+
+    ``signals`` reconstructs the SignalSnapshot (the engine's input); ``measurements``
+    preserves the raw per-collector data — RTT, packet loss %, resolved IPs, traceroute
+    hops, timings — so captured fixtures can later validate the collector layer and
+    calibrate confidence scores. The booleans alone cannot support either: they are
+    the engine's *output* of the measurements, not the measurements themselves.
+    """
+    return {
+        "scenario": name,
+        "captured_at": captured_at,
+        "target": parsed.raw,
+        "signals": asdict(result.snapshot),
+        "measurements": {
+            "gateway": asdict(result.gateway),
+            "dns": asdict(result.dns),
+            "ip_connectivity": asdict(result.ip),
+            "control_hosts": asdict(result.controls),
+            "target_service": asdict(result.target),
+            "path_primary": asdict(result.path_primary),
+            "path_secondary": asdict(result.path_secondary) if result.path_secondary else None,
+        },
+    }
+
+
 def _print_capture(name: str, target: str, skip_path: bool) -> None:
     if not re.fullmatch(r"[a-zA-Z0-9_-]+", name):
         print("error: fixture name must contain only letters, digits, hyphens, and underscores", file=sys.stderr)
@@ -313,25 +342,15 @@ def _print_capture(name: str, target: str, skip_path: bool) -> None:
         sys.exit(3)
 
     snap = result.snapshot
-    payload = {
-        "scenario": name,
-        "gateway_reachable": snap.gateway_reachable,
-        "dns_ok": snap.dns_ok,
-        "ip_connectivity_ok": snap.ip_connectivity_ok,
-        "control_hosts_ok": snap.control_hosts_ok,
-        "target_service_ok": snap.target_service_ok,
-        "default_route_present": snap.default_route_present,
-        "packet_loss_after_hop1": snap.packet_loss_after_hop1,
-        "packet_loss_multiple_targets": snap.packet_loss_multiple_targets,
-    }
+    captured_at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    payload = _build_capture_payload(name, parsed, result, captured_at)
 
     fixture_path = Path("tests/fixtures") / f"{name}.json"
     fixture_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
-    # Round-trip validation
+    # Round-trip validation: the signals block must reconstruct the snapshot.
     data = json.loads(fixture_path.read_text(encoding="utf-8"))
-    data.pop("scenario", None)
-    reloaded = SignalSnapshot(**data)
+    reloaded = SignalSnapshot(**data["signals"])
     if reloaded != snap:
         fixture_path.unlink(missing_ok=True)
         print("error: fixture round-trip validation failed", file=sys.stderr)

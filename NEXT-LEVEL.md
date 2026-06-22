@@ -18,7 +18,7 @@
 - [ ] Phase 2 rule calibration: tune `_LOSS_THRESHOLD_PCT` and confidence tiers against captured failure fixtures; the 20% threshold and 0.93/0.95/0.96/0.99 confidence values are design estimates, not field-validated.
 - [ ] PyPI release pipeline: the `pyproject.toml` is complete and the classifier says Beta, but there is no publish workflow in CI and no tagged release on GitHub.
 - [ ] Remote vantage check (Phase 3): a single-machine diagnosis cannot distinguish ISP-local degradation from widespread outage; even a single HTTP probe to a known-good external vantage point would close this gap.
-- [ ] Config file documentation: `USAGE.md` and the README document CLI flags but not the TOML config schema (`ProbeConfig` fields, env overrides, default paths) — the power-user surface is undiscoverable.
+- [x] ~~Config file documentation~~ — **done** (2026-06-22): `USAGE.md` now has a `## Configuration` section documenting the full TOML schema (all 14 `ProbeConfig` fields across `[probes]`/`[thresholds]`/`[timeouts]` with defaults + validation), the platform-default paths, the `BOUNDARY_PROBE_CONFIG` override, and missing/invalid-file behavior. README Quick Start links to it. All 14 fields verified consumed (no dead knobs).
 - [x] ~~Add `local-device` detection rule~~ — **done** (`31abd59`): the route table with no default gateway now classifies as `local-device` instead of mis-classifying as `router-gateway`.
 
 ## Nice-to-have

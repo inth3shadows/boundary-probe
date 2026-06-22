@@ -117,6 +117,79 @@ measurements — gateway RTT, packet-loss percentages, resolved DNS addresses,
 traceroute hops, and timings — so the capture can be replayed for analysis or used
 to calibrate confidence. It does not store raw packet captures.
 
+## Configuration
+
+Boundary Probe works out of the box with no configuration — the defaults target
+general internet health. Configuration is optional and only needed if you want to
+change which hosts are probed, tune the failure thresholds, or adjust timeouts.
+
+### Where the config lives
+
+There is no config file until you create one. To see the effective settings and
+the exact path Boundary Probe looks for:
+
+```bash
+boundary-probe config
+```
+
+The default location is inside the app data directory:
+
+| Platform | Default config path |
+|----------|---------------------|
+| Windows  | `%LOCALAPPDATA%\boundary-probe\config.toml` |
+| Linux    | `$XDG_DATA_HOME/boundary-probe/config.toml` (typically `~/.local/share/boundary-probe/config.toml`) |
+
+To point at a config file elsewhere, set the `BOUNDARY_PROBE_CONFIG` environment
+variable to the file path — it overrides the default location entirely.
+
+### What happens when the file is missing or wrong
+
+- **Missing file** → built-in defaults are used (no error).
+- **Unparseable TOML** → a warning is printed and defaults are used.
+- **Valid TOML, invalid values** (e.g. a negative timeout) → an error is printed
+  and the command exits non-zero. Fix the value rather than ignoring it.
+
+### Schema
+
+The file has three optional tables. Any key you omit keeps its default; any table
+you omit keeps all its defaults.
+
+```toml
+[probes]
+# Known-good public hosts used as the internet-health quorum.
+control_hosts = ["1.1.1.1", "8.8.8.8", "8.8.4.4", "cloudflare.com"]
+# Single IP pinged directly to test raw IP connectivity, bypassing DNS.
+canary_ip = "1.1.1.1"
+# A second, independent target. ISP-upstream loss is only reported when loss
+# appears on both the primary target and this one (avoids blaming the ISP for a
+# single flaky destination).
+secondary_target = "8.8.8.8"
+# How many of control_hosts must be healthy to call the internet controls OK.
+# Must be >= 1 and <= the number of control_hosts.
+control_quorum = 3
+
+[thresholds]
+# Per-hop loss % above which a traceroute hop counts as lossy (0–100).
+path_loss_pct = 20.0
+# Loss % above which a control host is considered failed (0–100).
+control_loss_pct = 50.0
+# Loss % above which the canary IP ping is considered failed (0–100).
+ip_loss_pct = 50.0
+# Minimum ping replies (out of 4) for the gateway to count as reachable. >= 1.
+gateway_min_replies = 2
+
+[timeouts]
+# All values are seconds and must be > 0.
+gateway_route_s = 5.0      # default-route lookup
+gateway_ping_s = 8.0       # gateway ping
+ip_connectivity_s = 15.0   # canary IP ping
+control_hosts_s = 10.0     # control-host probes
+target_ping_s = 8.0        # target ping
+tracert_s = 60.0           # traceroute ceiling
+```
+
+The values shown above are the defaults — copy only the lines you want to change.
+
 ## What to Do When Something Breaks
 
 **"The command isn't found after activating the virtual environment"**  

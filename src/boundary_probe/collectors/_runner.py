@@ -26,6 +26,14 @@ class SubprocessRunner(Protocol):
     def run(self, argv: list[str], timeout_s: float) -> CommandResult: ...
 
 
+# Force the C locale so ping/traceroute emit the English output the parsers key
+# on. Under a localized LANG, "0% packet loss" / "rtt min/avg/max" come back
+# translated, the regexes miss, and the result silently parses as 100% loss —
+# a fake network fault. Windows ping/tracert ignore these vars, so it's a no-op
+# there; setting them unconditionally keeps one code path.
+_C_LOCALE_ENV = {**os.environ, "LC_ALL": "C", "LANG": "C"}
+
+
 class DefaultRunner:
     """Production runner. shell=False always. Platform-appropriate output encoding."""
 
@@ -38,6 +46,7 @@ class DefaultRunner:
                 timeout=timeout_s,
                 shell=False,
                 creationflags=_CREATE_NO_WINDOW,
+                env=_C_LOCALE_ENV,
             )
             elapsed_ms = int((time.monotonic() - t0) * 1000)
             result = CommandResult(

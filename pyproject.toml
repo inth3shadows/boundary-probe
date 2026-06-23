@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "boundary-probe"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Deterministic network boundary diagnosis — pinpoints whether a connectivity failure is local, gateway, DNS, ISP, or remote service."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -43,6 +43,12 @@ dev = [
 
 [project.scripts]
 boundary-probe = "boundary_probe.cli:main"
+
+[tool.setuptools.dynamic]
+# Single source of truth for the version: src/boundary_probe/__init__.py.
+# setuptools reads the literal via ast (no import), so tag-time releases can
+# never disagree with the installed package.
+version = {attr = "boundary_probe.__version__"}
 
 [tool.setuptools.packages.find]
 where = ["src"]

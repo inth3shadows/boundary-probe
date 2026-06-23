@@ -60,6 +60,11 @@ def _build_parser() -> argparse.ArgumentParser:
                                  help="Print N most recent runs and exit.")
     diagnose_parser.add_argument("--no-path", action="store_true", dest="no_path",
                                  help="Skip tracert (faster, less signal).")
+    diagnose_parser.add_argument("--vantage", metavar="URL", default=None,
+                                 help="Opt-in external vantage URL (https). When the "
+                                      "verdict is isp-upstream/remote-service, asks this "
+                                      "endpoint whether the target is reachable from "
+                                      "elsewhere. Sends only the target. Overrides config.")
 
     escalate_parser = subparsers.add_parser(
         "escalate",
@@ -153,6 +158,10 @@ def _print_config() -> None:
     print(f"  target_ping       {cfg.target_ping_s}s")
     print(f"  target_tcp        {cfg.target_tcp_s}s")
     print(f"  tracert           {cfg.tracert_s}s")
+    print()
+    print("[vantage]")
+    print(f"  url               {cfg.vantage_url or '(disabled)'}")
+    print(f"  timeout           {cfg.vantage_timeout_s}s")
 
 
 def _format_collector_details(result: CollectionResult) -> str:
@@ -235,7 +244,33 @@ def _print_history(n: int) -> None:
         )
 
 
-def _print_diagnose(target: str, as_json: bool, history: int | None, skip_path: bool) -> None:
+def _maybe_consult_vantage(diagnosis, parsed, vantage_override: str | None):
+    """Opt-in: fold an external vantage check into the diagnosis (fail-open).
+
+    The URL comes from --vantage or [vantage].url in config. Only consulted for
+    the isp-upstream/remote-service verdicts. Prints a one-line stderr notice
+    naming the destination whenever it reaches out, so the outbound call from an
+    otherwise-local tool is never silent.
+    """
+    from boundary_probe.collectors.vantage import apply_vantage
+    from boundary_probe.engine import _VANTAGE_REFINABLE
+
+    cfg = load_config()
+    url = vantage_override if vantage_override is not None else cfg.vantage_url
+    if not url or diagnosis.boundary not in _VANTAGE_REFINABLE:
+        return diagnosis
+
+    target_str = parsed.host if parsed.port is None else f"{parsed.host}:{parsed.port}"
+    print(f"note: consulting external vantage {url} (sends target '{target_str}')",
+          file=sys.stderr)
+    refined, slice_ = apply_vantage(diagnosis, target_str, url, cfg.vantage_timeout_s)
+    if slice_ is not None and not slice_.consulted:
+        print(f"note: external vantage not consulted ({slice_.note})", file=sys.stderr)
+    return refined
+
+
+def _print_diagnose(target: str, as_json: bool, history: int | None, skip_path: bool,
+                    vantage_url: str | None = None) -> None:
     if history is not None:
         if history <= 0:
             print("error: --history N must be positive", file=sys.stderr)
@@ -256,6 +291,7 @@ def _print_diagnose(target: str, as_json: bool, history: int | None, skip_path: 
         sys.exit(3)
 
     diagnosis = diagnose(result.snapshot)
+    diagnosis = _maybe_consult_vantage(diagnosis, parsed, vantage_url)
 
     with connect() as conn:
         run_uuid = insert_run(
@@ -486,6 +522,7 @@ def main(argv: list[str] | None = None) -> None:
             as_json=args.as_json,
             history=history,
             skip_path=args.no_path,
+            vantage_url=args.vantage,
         )
         return
     if args.command == "escalate":

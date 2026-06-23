@@ -40,7 +40,12 @@ Evidence hardening:
 ### Phase 3
 
 Optional product surface expansion:
-- remote vantage checks
+- remote vantage checks — **shipped (opt-in).** A user-configured external
+  endpoint (`--vantage` / `[vantage].url`) breaks the single-machine tie between
+  "down for everyone" and "just my path." Applied as a pure post-classification
+  refinement (`engine.refine`) so the deterministic table and its exhaustive
+  coverage test are untouched; advisory only (adjusts confidence + evidence,
+  never the verdict); fail-open. See USAGE.md → "Remote vantage".
 - hosted analysis and presentation
 - exportable support bundles
 

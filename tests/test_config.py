@@ -82,6 +82,36 @@ def test_toml_overrides_threshold(monkeypatch, tmp_path):
     assert cfg.control_loss_pct == _DEFAULTS.control_loss_pct
 
 
+def test_vantage_disabled_by_default(monkeypatch, tmp_path):
+    monkeypatch.setenv("BOUNDARY_PROBE_CONFIG", str(tmp_path / "nope.toml"))
+    cfg = load_config()
+    assert cfg.vantage_url is None
+    assert cfg.vantage_timeout_s == 4.0
+
+
+def test_vantage_toml_override(monkeypatch, tmp_path):
+    _write_config(tmp_path, '[vantage]\nurl = "https://probe.example/check"\ntimeout_s = 6.0\n')
+    monkeypatch.setenv("BOUNDARY_PROBE_CONFIG", str(tmp_path / "config.toml"))
+    cfg = load_config()
+    assert cfg.vantage_url == "https://probe.example/check"
+    assert cfg.vantage_timeout_s == 6.0
+
+
+def test_vantage_url_must_be_https(monkeypatch, tmp_path):
+    # The target travels off-box; a cleartext http:// vantage is rejected.
+    _write_config(tmp_path, '[vantage]\nurl = "http://probe.example/check"\n')
+    monkeypatch.setenv("BOUNDARY_PROBE_CONFIG", str(tmp_path / "config.toml"))
+    with pytest.raises(SystemExit):
+        load_config()
+
+
+def test_vantage_timeout_must_be_positive(monkeypatch, tmp_path):
+    _write_config(tmp_path, '[vantage]\nurl = "https://probe.example"\ntimeout_s = 0\n')
+    monkeypatch.setenv("BOUNDARY_PROBE_CONFIG", str(tmp_path / "config.toml"))
+    with pytest.raises(SystemExit):
+        load_config()
+
+
 def test_toml_overrides_timeout(monkeypatch, tmp_path):
     _write_config(tmp_path, "[timeouts]\ntracert_s = 60.0\n")
     monkeypatch.setenv("BOUNDARY_PROBE_CONFIG", str(tmp_path / "config.toml"))

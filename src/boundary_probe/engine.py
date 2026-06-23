@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from boundary_probe.models import Diagnosis, EvidenceItem, SignalSnapshot
+from boundary_probe.models import Diagnosis, EvidenceItem, SignalSnapshot, VantageSlice
 
 
 @dataclass(frozen=True)
@@ -255,3 +255,68 @@ def diagnose(signals: SignalSnapshot) -> Diagnosis:
             return rule.build(signals)
     # The final rule has an empty match and always fires, so this is unreachable.
     raise AssertionError("decision table has no catch-all rule")  # pragma: no cover
+
+
+# Boundaries an external vantage can disambiguate: both depend on whether the
+# target is reachable from somewhere *other* than this connection — a question a
+# single machine cannot answer. All other verdicts pass through refine unchanged.
+_VANTAGE_REFINABLE: frozenset[str] = frozenset({"isp-upstream", "remote-service"})
+
+
+def refine(diagnosis: Diagnosis, vantage: VantageSlice) -> Diagnosis:
+    """Apply an optional external-vantage result to a base diagnosis.
+
+    Pure and advisory by design. Returns the diagnosis byte-for-byte unchanged
+    unless (1) the vantage was consulted with a definite answer AND (2) the base
+    boundary is one a vantage can disambiguate. It NEVER changes the boundary in
+    v1 — only nudges confidence and appends an evidence line — so a misbehaving,
+    compromised, or upstream-correlated vantage cannot flip a verdict a user
+    escalates on. Network I/O happens in the collector; this stays pure so the
+    256-combo coverage guarantee on ``diagnose`` is untouched.
+    """
+    if not vantage.consulted or vantage.target_reachable_externally is None:
+        return diagnosis
+    if diagnosis.boundary not in _VANTAGE_REFINABLE:
+        return diagnosis
+
+    reachable = vantage.target_reachable_externally
+    evidence = list(diagnosis.evidence)
+    confidence = diagnosis.confidence
+
+    if diagnosis.boundary == "remote-service":
+        if not reachable:
+            confidence = min(0.99, confidence + 0.03)
+            evidence.append(EvidenceItem(
+                "vantage",
+                "An independent external vantage also could not reach the target — "
+                "it appears down for everyone, not just this network.",
+            ))
+        else:
+            confidence = max(0.50, confidence - 0.15)
+            evidence.append(EvidenceItem(
+                "vantage",
+                "An external vantage CAN reach the target — the failure may be "
+                "specific to this connection's path, not the service itself.",
+            ))
+    else:  # isp-upstream
+        if reachable:
+            confidence = min(0.99, confidence + 0.04)
+            evidence.append(EvidenceItem(
+                "vantage",
+                "An external vantage reached the target — the loss is on this "
+                "connection's path, not a widespread outage.",
+            ))
+        else:
+            evidence.append(EvidenceItem(
+                "vantage",
+                "An external vantage also failed to reach the target — a wider "
+                "upstream outage is possible; re-run to confirm.",
+            ))
+
+    return Diagnosis(
+        boundary=diagnosis.boundary,
+        confidence=confidence,
+        summary=diagnosis.summary,
+        evidence=evidence,
+        remediation=list(diagnosis.remediation),
+    )

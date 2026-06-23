@@ -159,8 +159,104 @@ def test_capture_writes_enriched_fixture(monkeypatch, tmp_db, fake_collection_re
     output = _run(["capture", "scn", "--target", "1.1.1.1"])
     assert "captured fixture" in output
     data = json.loads((tmp_path / "tests" / "fixtures" / "scn.json").read_text(encoding="utf-8"))
-    assert set(data) == {"scenario", "captured_at", "target", "signals", "measurements"}
+    assert set(data) == {"scenario", "captured_at", "capture_method", "target", "signals", "measurements"}
     assert data["measurements"]["gateway"]["rtt_ms"] == 2.0
+    # default capture_method is "real"; no expected_boundary unless asked for
+    assert data["capture_method"] == "real"
+    assert "expected_boundary" not in data
+
+
+def test_capture_records_label_and_injected_method(monkeypatch, tmp_db, fake_collection_result, tmp_path):
+    # The calibration flags round-trip into the fixture (issue #11).
+    import json
+
+    monkeypatch.setattr("boundary_probe.cli.collect_signals", lambda *a, **kw: fake_collection_result)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "tests" / "fixtures").mkdir(parents=True)
+
+    _run(["capture", "dns-broken", "--target", "1.1.1.1",
+          "--expected-boundary", "dns", "--capture-method", "injected"])
+    data = json.loads((tmp_path / "tests" / "fixtures" / "dns-broken.json").read_text(encoding="utf-8"))
+    assert data["expected_boundary"] == "dns"
+    assert data["capture_method"] == "injected"
+
+
+def test_scrub_measurements_redacts_public_keeps_private():
+    from boundary_probe.cli import _SCRUB_PLACEHOLDER, _scrub_measurements
+
+    measurements = {
+        "gateway": {"gateway_ip": "8.8.8.8"},          # public -> scrub
+        "path_primary": {"raw_hops": [
+            {"index": 1, "host": "10.0.0.1"},          # private -> keep
+            {"index": 2, "host": "1.2.3.4"},           # public -> scrub
+            {"index": 3, "host": "*"},                 # non-IP -> keep
+        ]},
+        "path_secondary": None,
+    }
+    scrubbed, hits = _scrub_measurements(measurements, scrub=True)
+    assert len(hits) == 2
+    assert scrubbed["gateway"]["gateway_ip"] == _SCRUB_PLACEHOLDER
+    hops = scrubbed["path_primary"]["raw_hops"]
+    assert hops[0]["host"] == "10.0.0.1"
+    assert hops[1]["host"] == _SCRUB_PLACEHOLDER
+    assert hops[2]["host"] == "*"
+    # original is untouched (deep-copied)
+    assert measurements["gateway"]["gateway_ip"] == "8.8.8.8"
+
+    # scrub=False reports the public IPs found but changes nothing
+    same, found = _scrub_measurements(measurements, scrub=False)
+    assert len(found) == 2
+    assert same["gateway"]["gateway_ip"] == "8.8.8.8"
+
+
+def _result_with_public_hop(fake_collection_result):
+    from dataclasses import replace
+    return replace(
+        fake_collection_result,
+        path_primary=replace(
+            fake_collection_result.path_primary,
+            raw_hops=[{"index": 2, "host": "1.2.3.4", "loss_pct": 0.0, "rtt_ms": 1.0}],
+        ),
+    )
+
+
+def test_capture_scrubs_public_hop_by_default(monkeypatch, tmp_db, fake_collection_result, tmp_path):
+    import json
+    from boundary_probe.cli import _SCRUB_PLACEHOLDER
+
+    res = _result_with_public_hop(fake_collection_result)
+    monkeypatch.setattr("boundary_probe.cli.collect_signals", lambda *a, **kw: res)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "tests" / "fixtures").mkdir(parents=True)
+
+    _run(["capture", "scn", "--target", "1.1.1.1"])
+    data = json.loads((tmp_path / "tests" / "fixtures" / "scn.json").read_text(encoding="utf-8"))
+    assert data["measurements"]["path_primary"]["raw_hops"][0]["host"] == _SCRUB_PLACEHOLDER
+
+
+def test_capture_no_scrub_blocks_public_ip(monkeypatch, tmp_db, fake_collection_result, tmp_path):
+    res = _result_with_public_hop(fake_collection_result)
+    monkeypatch.setattr("boundary_probe.cli.collect_signals", lambda *a, **kw: res)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "tests" / "fixtures").mkdir(parents=True)
+
+    with pytest.raises(SystemExit) as exc:
+        main(["capture", "scn", "--target", "1.1.1.1", "--no-scrub"])
+    assert exc.value.code == 5
+    assert not (tmp_path / "tests" / "fixtures" / "scn.json").exists()
+
+
+def test_capture_no_scrub_allow_public_writes_raw(monkeypatch, tmp_db, fake_collection_result, tmp_path):
+    import json
+
+    res = _result_with_public_hop(fake_collection_result)
+    monkeypatch.setattr("boundary_probe.cli.collect_signals", lambda *a, **kw: res)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "tests" / "fixtures").mkdir(parents=True)
+
+    _run(["capture", "scn", "--target", "1.1.1.1", "--no-scrub", "--allow-public-ips"])
+    data = json.loads((tmp_path / "tests" / "fixtures" / "scn.json").read_text(encoding="utf-8"))
+    assert data["measurements"]["path_primary"]["raw_hops"][0]["host"] == "1.2.3.4"
 
 
 # ---------------------------------------------------------------------------

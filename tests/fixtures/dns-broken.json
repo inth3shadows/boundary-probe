@@ -1,0 +1,86 @@
+{
+  "scenario": "dns-broken",
+  "captured_at": "2026-06-22T20:58:35Z",
+  "capture_method": "injected",
+  "target": "example.com",
+  "signals": {
+    "gateway_reachable": true,
+    "dns_ok": false,
+    "ip_connectivity_ok": true,
+    "control_hosts_ok": true,
+    "target_service_ok": false,
+    "default_route_present": true,
+    "packet_loss_after_hop1": false,
+    "packet_loss_multiple_targets": false
+  },
+  "measurements": {
+    "gateway": {
+      "reachable": true,
+      "gateway_ip": "10.200.0.1",
+      "rtt_ms": 0.056,
+      "note": ""
+    },
+    "dns": {
+      "ok": false,
+      "resolved_ips": [],
+      "resolver_used": null,
+      "elapsed_ms": 1,
+      "note": "[Errno -3] Temporary failure in name resolution"
+    },
+    "ip_connectivity": {
+      "ok": true,
+      "target_ip": "1.1.1.1",
+      "loss_pct": 0.0,
+      "avg_rtt_ms": 18.258,
+      "note": ""
+    },
+    "control_hosts": {
+      "all_ok": true,
+      "ok_count": 3,
+      "total": 4,
+      "results": [
+        {
+          "host": "1.1.1.1",
+          "reachable": true,
+          "loss_pct": 0.0,
+          "avg_rtt_ms": 18.337
+        },
+        {
+          "host": "8.8.8.8",
+          "reachable": true,
+          "loss_pct": 0.0,
+          "avg_rtt_ms": 16.032
+        },
+        {
+          "host": "8.8.4.4",
+          "reachable": true,
+          "loss_pct": 0.0,
+          "avg_rtt_ms": 16.276
+        },
+        {
+          "host": "cloudflare.com",
+          "reachable": false,
+          "loss_pct": 100.0,
+          "avg_rtt_ms": null
+        }
+      ],
+      "note": ""
+    },
+    "target_service": {
+      "ok": false,
+      "method": "ping",
+      "target_host": "example.com",
+      "target_port": null,
+      "elapsed_ms": 3,
+      "note": "100% packet loss pinging example.com"
+    },
+    "path_primary": {
+      "raw_hops": [],
+      "target": "example.com",
+      "completed": false,
+      "note": "skipped via --no-path"
+    },
+    "path_secondary": null
+  },
+  "expected_boundary": "dns"
+}

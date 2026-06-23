@@ -41,6 +41,12 @@ _KNOWN_SCENARIOS = {
     "remote-service": "remote-service",
 }
 
+# High-confidence/high-harm boundaries: a wrong call here is the most damaging,
+# and these are the hardest to fixture from real outages. If their only evidence
+# is injected (synthetic-fingerprint) fixtures, the empirical rate is not yet
+# trustworthy — calibration warns rather than letting a convincing table mislead.
+_HIGH_HARM = {"router-gateway", "isp-upstream"}
+
 
 def _snapshot_from(data: dict) -> SignalSnapshot:
     """Load a SignalSnapshot from either a v1 (flat) or v2 (enriched) fixture."""
@@ -78,6 +84,9 @@ def main(argv: list[str]) -> int:
     hardcoded = _hardcoded_confidences()
     # per predicted boundary: [correct, total]
     tally: dict[str, list[int]] = defaultdict(lambda: [0, 0])
+    # per predicted boundary: count of real vs injected captures behind it
+    real_n: dict[str, int] = defaultdict(int)
+    injected_n: dict[str, int] = defaultdict(int)
     rows_unlabeled = 0
 
     for f in files:
@@ -91,27 +100,44 @@ def main(argv: list[str]) -> int:
         tally[predicted][1] += 1
         if predicted == truth:
             tally[predicted][0] += 1
+        # Default to "real": the pre-existing synthetic v1 fixtures carry no
+        # capture_method and are treated as the reference cohort.
+        if data.get("capture_method") == "injected":
+            injected_n[predicted] += 1
+        else:
+            real_n[predicted] += 1
 
     print(f"Calibration over {len(files)} fixture(s) in {fixtures_dir}")
     if rows_unlabeled:
         print(f"  ({rows_unlabeled} fixture(s) skipped — no ground-truth "
               f"boundary; add an 'expected_boundary' key)")
     print()
-    print(f"{'boundary':<16}{'hardcoded':>10}{'n':>5}{'empirical':>11}{'gap':>8}")
-    print("-" * 50)
+    print(f"{'boundary':<16}{'hardcoded':>10}{'n':>5}{'real':>6}{'inj':>5}{'empirical':>11}{'gap':>8}")
+    print("-" * 61)
+    warnings: list[str] = []
     for boundary in sorted(set(hardcoded) | set(tally)):
         hc = hardcoded.get(boundary)
         correct, total = tally.get(boundary, [0, 0])
+        real, inj = real_n.get(boundary, 0), injected_n.get(boundary, 0)
         hc_str = f"{hc:.2f}" if hc is not None else "—"
         if total:
             emp = correct / total
             gap = (emp - hc) if hc is not None else 0.0
-            print(f"{boundary:<16}{hc_str:>10}{total:>5}{emp:>11.2f}{gap:>+8.2f}")
+            print(f"{boundary:<16}{hc_str:>10}{total:>5}{real:>6}{inj:>5}{emp:>11.2f}{gap:>+8.2f}")
         else:
-            print(f"{boundary:<16}{hc_str:>10}{0:>5}{'—':>11}{'—':>8}")
+            print(f"{boundary:<16}{hc_str:>10}{0:>5}{real:>6}{inj:>5}{'—':>11}{'—':>8}")
+        if boundary in _HIGH_HARM and inj > 0 and real == 0:
+            warnings.append(boundary)
     print()
     print("Note: 'empirical' is fixture hit-rate, not a true accuracy estimate "
           "until enough real captures exist per boundary.")
+    if warnings:
+        print()
+        print("WARNING: high-harm boundary backed by injected-only fixtures — the "
+              "empirical rate is NOT yet trustworthy here (synthetic fingerprints, "
+              "no sample diversity). Capture real outages before recalibrating:")
+        for b in warnings:
+            print(f"  - {b}")
     return 0
 
 

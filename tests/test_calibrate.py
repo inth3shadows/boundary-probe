@@ -49,3 +49,26 @@ def test_calibrate_uses_expected_boundary_field(tmp_path, capsys):
     # the labeled healthy fixture is counted (n=1 for healthy, 100% empirical)
     assert "healthy" in out
     assert "skipped" not in out
+
+
+def test_calibrate_warns_on_injected_only_high_harm(tmp_path, capsys):
+    # A high-harm boundary (router-gateway) backed only by an injected fixture
+    # must trigger the trust warning — injected fingerprints are not real outages.
+    import json
+    (tmp_path / "router.json").write_text(json.dumps({
+        "scenario": "router-down",
+        "expected_boundary": "router-gateway",
+        "capture_method": "injected",
+        "signals": {
+            "gateway_reachable": False, "dns_ok": False, "ip_connectivity_ok": False,
+            "control_hosts_ok": False, "target_service_ok": False,
+            "default_route_present": True,
+            "packet_loss_after_hop1": False, "packet_loss_multiple_targets": False,
+        },
+    }), encoding="utf-8")
+    mod = _load_calibrate()
+    rc = mod.main(["calibrate.py", str(tmp_path)])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "WARNING" in out
+    assert "router-gateway" in out

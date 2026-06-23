@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import datetime
+import ipaddress
 import json
 import re
 import subprocess
@@ -12,7 +14,7 @@ from pathlib import Path
 from boundary_probe.collectors import collect_signals
 from boundary_probe.collectors.orchestrator import CollectionResult
 from boundary_probe.config import get_config_path, load_config
-from boundary_probe.engine import diagnose
+from boundary_probe.engine import BOUNDARIES, diagnose
 from boundary_probe.models import SignalSnapshot
 from boundary_probe.store import confidence_band, connect, fetch_recent, fetch_run, insert_run
 from boundary_probe.targets import ParsedTarget, parse_target
@@ -97,6 +99,22 @@ def _build_parser() -> argparse.ArgumentParser:
     capture_parser.add_argument("--target", required=True, help="Target to probe for the fixture.")
     capture_parser.add_argument("--no-path", action="store_true", dest="no_path",
                                 help="Skip tracert.")
+    capture_parser.add_argument("--expected-boundary", dest="expected_boundary",
+                                choices=BOUNDARIES, default=None,
+                                help="Ground-truth boundary for calibration (writes the "
+                                     "'expected_boundary' key so scripts/calibrate.py scores it).")
+    capture_parser.add_argument("--capture-method", dest="capture_method",
+                                choices=("real", "injected"), default="real",
+                                help="How the fault state was produced. 'injected' marks a "
+                                     "fixture made by fault injection (synthetic fingerprint) so "
+                                     "calibration can separate it from real captures.")
+    capture_parser.add_argument("--no-scrub", action="store_true", dest="no_scrub",
+                                help="Do not redact public IPs from the captured measurements. "
+                                     "Refuses to write if a public IP is present unless "
+                                     "--allow-public-ips is also given.")
+    capture_parser.add_argument("--allow-public-ips", action="store_true", dest="allow_public_ips",
+                                help="Permit public IPs in the written fixture (use only for a "
+                                     "fixture you have confirmed leaks nothing identifying).")
 
     return parser
 
@@ -300,8 +318,60 @@ def _escalate(run_uuid: str, copy: bool, output: str | None, no_file: bool) -> N
             print("warning: clipboard tool not found; copy skipped.", file=sys.stderr)
 
 
+_SCRUB_PLACEHOLDER = "<scrubbed-public-ip>"
+
+
+def _is_public_ip(value: object) -> bool:
+    """True if ``value`` is a globally-routable IP (the kind that leaks a location).
+
+    Private/CGNAT/loopback/link-local (RFC1918, 100.64/10, 127/8, the WSL2 172.31.x
+    NAT) are non-identifying and kept. Non-IP strings ("*", a hostname) return False.
+    """
+    try:
+        return ipaddress.ip_address(str(value)).is_global
+    except ValueError:
+        return False
+
+
+def _scrub_measurements(measurements: dict, *, scrub: bool) -> tuple[dict, list[str]]:
+    """Redact public IPs from a captured ``measurements`` block before it is written.
+
+    This repo is public; a real traceroute capture exposes the ISP path and
+    public-facing IPs. With ``scrub=True`` the public IPs in traceroute hops and the
+    gateway address are replaced with a placeholder and the redactions are returned.
+    With ``scrub=False`` nothing is changed and the returned list reports the public
+    IPs that were *found* (so the caller can refuse to write them). See issue #11.
+    """
+    out = copy.deepcopy(measurements)
+    hits: list[str] = []
+
+    gw = out.get("gateway")
+    if isinstance(gw, dict) and _is_public_ip(gw.get("gateway_ip")):
+        hits.append(f"gateway.gateway_ip={gw['gateway_ip']}")
+        if scrub:
+            gw["gateway_ip"] = _SCRUB_PLACEHOLDER
+
+    for key in ("path_primary", "path_secondary"):
+        slice_ = out.get(key)
+        if not isinstance(slice_, dict):
+            continue
+        for hop in slice_.get("raw_hops", []):
+            if isinstance(hop, dict) and _is_public_ip(hop.get("host")):
+                hits.append(f"{key}.hop[{hop.get('index')}].host={hop['host']}")
+                if scrub:
+                    hop["host"] = _SCRUB_PLACEHOLDER
+
+    return out, hits
+
+
 def _build_capture_payload(
-    name: str, parsed: ParsedTarget, result: CollectionResult, captured_at: str
+    name: str,
+    parsed: ParsedTarget,
+    result: CollectionResult,
+    captured_at: str,
+    *,
+    expected_boundary: str | None = None,
+    capture_method: str = "real",
 ) -> dict:
     """Serialize a collection run into an enriched fixture payload.
 
@@ -310,10 +380,16 @@ def _build_capture_payload(
     hops, timings — so captured fixtures can later validate the collector layer and
     calibrate confidence scores. The booleans alone cannot support either: they are
     the engine's *output* of the measurements, not the measurements themselves.
+
+    ``expected_boundary`` (optional) labels the ground truth for calibration;
+    ``capture_method`` records whether the fault was real or injected so calibration
+    can keep the two cohorts apart. Measurements here are raw — the caller scrubs
+    public IPs before writing (see ``_scrub_measurements``).
     """
-    return {
+    payload = {
         "scenario": name,
         "captured_at": captured_at,
+        "capture_method": capture_method,
         "target": parsed.raw,
         "signals": asdict(result.snapshot),
         "measurements": {
@@ -326,9 +402,21 @@ def _build_capture_payload(
             "path_secondary": asdict(result.path_secondary) if result.path_secondary else None,
         },
     }
+    if expected_boundary is not None:
+        payload["expected_boundary"] = expected_boundary
+    return payload
 
 
-def _print_capture(name: str, target: str, skip_path: bool) -> None:
+def _print_capture(
+    name: str,
+    target: str,
+    skip_path: bool,
+    *,
+    expected_boundary: str | None = None,
+    capture_method: str = "real",
+    no_scrub: bool = False,
+    allow_public_ips: bool = False,
+) -> None:
     if not re.fullmatch(r"[a-zA-Z0-9_-]+", name):
         print("error: fixture name must contain only letters, digits, hyphens, and underscores", file=sys.stderr)
         sys.exit(2)
@@ -346,7 +434,24 @@ def _print_capture(name: str, target: str, skip_path: bool) -> None:
 
     snap = result.snapshot
     captured_at = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    payload = _build_capture_payload(name, parsed, result, captured_at)
+    payload = _build_capture_payload(
+        name, parsed, result, captured_at,
+        expected_boundary=expected_boundary, capture_method=capture_method,
+    )
+
+    # Public-repo safety: redact (or refuse to write) public IPs in the capture.
+    scrubbed, hits = _scrub_measurements(payload["measurements"], scrub=not no_scrub)
+    if no_scrub:
+        if hits and not allow_public_ips:
+            for h in hits:
+                print(f"  would leak: {h}", file=sys.stderr)
+            print("error: --no-scrub would write public IP(s); re-run with --allow-public-ips "
+                  "only if you have confirmed the fixture leaks nothing identifying.", file=sys.stderr)
+            sys.exit(5)
+    else:
+        payload["measurements"] = scrubbed
+        for h in hits:
+            print(f"  scrubbed: {h} -> {_SCRUB_PLACEHOLDER}", file=sys.stderr)
 
     fixture_path = Path("tests/fixtures") / f"{name}.json"
     fixture_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
@@ -400,7 +505,13 @@ def main(argv: list[str] | None = None) -> None:
         run_watch(parsed, interval_s=args.interval, skip_path=args.no_path, max_polls=args.count)
         return
     if args.command == "capture":
-        _print_capture(args.name, args.target, args.no_path)
+        _print_capture(
+            args.name, args.target, args.no_path,
+            expected_boundary=args.expected_boundary,
+            capture_method=args.capture_method,
+            no_scrub=args.no_scrub,
+            allow_public_ips=args.allow_public_ips,
+        )
         return
     parser.error(f"unknown command: {args.command}")
 

@@ -8,6 +8,7 @@ from dataclasses import dataclass
 # Stored via an intermediate str so type narrowers don't eliminate non-Windows branches.
 _PLATFORM: str = sys.platform
 _WIN: bool = _PLATFORM == "win32"
+_MAC: bool = _PLATFORM == "darwin"
 
 
 @dataclass(slots=True, frozen=True)
@@ -155,16 +156,68 @@ def _parse_route_linux(stdout: str) -> str | None:
 
 
 # ---------------------------------------------------------------------------
+# macOS parsers
+# ---------------------------------------------------------------------------
+# BSD ping differs from Linux in three ways the Linux regexes miss: it says
+# "N packets received" (not "N received"), reports loss as a float ("0.0%"),
+# and labels RTT "round-trip ... stddev" (not "rtt ... mdev"). Traceroute output
+# is BSD-format-identical to Linux, so that parser is reused. `route -n get
+# default` prints a "gateway: <ip>" line instead of "default via <ip>".
+
+_MAC_PING_STATS_RE = re.compile(
+    r"(\d+) packets transmitted, (\d+) packets received, ([\d.]+)% packet loss"
+)
+_MAC_PING_RTT_RE = re.compile(
+    r"round-trip min/avg/max/stddev = [\d.]+/([\d.]+)/[\d.]+/[\d.]+ ms"
+)
+_MAC_ROUTE_GW_RE = re.compile(r"gateway:\s*(\d{1,3}(?:\.\d{1,3}){3})")
+
+
+def _parse_ping_mac(stdout: str) -> PingStats:
+    """Parse macOS (BSD) ping stdout into PingStats."""
+    m = _MAC_PING_STATS_RE.search(stdout)
+    if not m:
+        return PingStats(sent=0, received=0, loss_pct=100.0, min_ms=None, avg_ms=None, max_ms=None)
+    sent, received = int(m.group(1)), int(m.group(2))
+    loss_pct = float(m.group(3))
+    rtt = _MAC_PING_RTT_RE.search(stdout)
+    avg_ms = float(rtt.group(1)) if rtt else None
+    return PingStats(sent=sent, received=received, loss_pct=loss_pct, min_ms=None, avg_ms=avg_ms, max_ms=None)
+
+
+# BSD traceroute output matches the Linux format this parser already handles.
+_parse_traceroute_mac = _parse_traceroute_linux
+
+
+def _parse_route_mac(stdout: str) -> str | None:
+    """Return the default IPv4 gateway from `route -n get default` output, or None."""
+    m = _MAC_ROUTE_GW_RE.search(stdout)
+    return m.group(1) if m else None
+
+
+# ---------------------------------------------------------------------------
 # Public API — dispatcher wrappers select the right implementation at runtime
 # ---------------------------------------------------------------------------
 
 def parse_ping_output(stdout: str) -> PingStats:
-    return _parse_ping_win(stdout) if _WIN else _parse_ping_linux(stdout)
+    if _WIN:
+        return _parse_ping_win(stdout)
+    if _MAC:
+        return _parse_ping_mac(stdout)
+    return _parse_ping_linux(stdout)
 
 
 def parse_tracert_output(stdout: str) -> list[dict]:
-    return _parse_tracert_win(stdout) if _WIN else _parse_traceroute_linux(stdout)
+    if _WIN:
+        return _parse_tracert_win(stdout)
+    if _MAC:
+        return _parse_traceroute_mac(stdout)
+    return _parse_traceroute_linux(stdout)
 
 
 def parse_route_print_default_gateway(stdout: str) -> str | None:
-    return _parse_route_win(stdout) if _WIN else _parse_route_linux(stdout)
+    if _WIN:
+        return _parse_route_win(stdout)
+    if _MAC:
+        return _parse_route_mac(stdout)
+    return _parse_route_linux(stdout)

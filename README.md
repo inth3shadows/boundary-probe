@@ -33,6 +33,10 @@ The rule engine is intentionally deterministic: same signals → same result, ev
 - Python 3.11 or newer
 - `ping`, `traceroute`, and `ip` (iproute2) — install with `sudo apt install traceroute iputils-ping iproute2`
 
+**macOS:**
+- Python 3.11 or newer
+- `ping`, `traceroute`, and `route` (all ship with macOS — no install needed)
+
 No additional runtime dependencies — stdlib only.
 
 ## Quick Start

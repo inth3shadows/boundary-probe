@@ -76,20 +76,40 @@ python scripts/calibrate.py            # default: tests/fixtures
 python scripts/calibrate.py <dir>      # a separate capture dir
 ```
 
-It prints, per boundary: the hardcoded confidence, the number of labeled
-fixtures (split into `real` and injected `inj` cohorts), the empirical hit-rate,
-and the gap. Example:
+The harness runs two passes.
+
+**Boolean pass.** Per boundary: the hardcoded confidence, the number of labeled
+fixtures split into three cohorts — `real` (genuine captures), `syn` (the v1
+synthetic reference fixtures), and `inj` (fault-injected) — the empirical
+hit-rate, and the gap. Example:
 
 ```
-boundary         hardcoded    n  real  inj  empirical     gap
-router-gateway        0.99    8     6    2       0.88   -0.11
+boundary         hardcoded    n  real  syn  inj  empirical     gap
+router-gateway        0.99    8     6    0    2       0.88   -0.11
 ```
 
 A persistent negative gap with a healthy `real` count (say ≥ 10) is evidence the
 prior is too confident; a tight match is evidence it is well-set. The harness
-also emits a WARNING when a high-harm boundary (`router-gateway`, `isp-upstream`)
-has `real=0` and `inj>0` — its rate is not yet trustworthy because injected
-fingerprints are synthetic and lack cross-network sample diversity.
+emits a WARNING when a high-harm boundary (`router-gateway`, `isp-upstream`) has
+`real=0` while `syn` and/or `inj` are non-zero — its rate is not yet trustworthy
+because synthetic and injected fingerprints lack cross-network sample diversity.
+(The cohorts are kept apart deliberately: a synthetic fixture defaulting into the
+`real` count would silently silence this warning.)
+
+**Measurement pass.** The engine has exactly one tunable numeric threshold that
+fixtures exercise: path-loss % (`path_loss_pct`, default 20). For every fixture
+carrying a `measurements` block the harness:
+
+- **recomputes the core booleans** from the raw measurements and flags any
+  `MISMATCH` with the stored signal — a capture-pipeline bug, not a calibration
+  signal, but the highest-value thing this pass can find;
+- **reports path-loss hops** and flags any whose loss% lands within ±10pp of the
+  threshold (the "ambiguous band", 10–30%) — that is where a real capture would
+  first expose a mis-set threshold. Injected `netem` loss clears the bar cleanly
+  (e.g. 33%) and so never lands here, which is exactly why real captures matter.
+
+RTT and hop counts have **no** engine threshold and are shown as context only —
+inventing a cutoff the engine does not use would fabricate calibration.
 
 ## 4. Recalibrate (human decision)
 

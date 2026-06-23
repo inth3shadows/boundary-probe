@@ -67,7 +67,11 @@ def collect_vantage(
     if parts.scheme != "https":
         return VantageSlice(False, None, "vantage url must be https")
 
-    query = urllib.parse.urlencode({"target": target})
+    # Preserve any query already on the configured URL (e.g. an auth token) and
+    # append the target rather than overwriting it.
+    params = urllib.parse.parse_qsl(parts.query)
+    params.append(("target", target))
+    query = urllib.parse.urlencode(params)
     url = urllib.parse.urlunsplit((parts.scheme, parts.netloc, parts.path, query, ""))
 
     try:
@@ -76,6 +80,9 @@ def collect_vantage(
             TimeoutError, OSError, ValueError) as exc:
         return VantageSlice(False, None, f"vantage unreachable: {exc}")
 
+    # The real _default_fetch never reaches here for a non-2xx response — urllib
+    # raises HTTPError (caught above) — so this primarily guards injected
+    # fetch_fns in tests; it is cheap insurance either way.
     if status != 200:
         return VantageSlice(False, None, f"vantage returned HTTP {status}")
     if len(body) > _MAX_RESPONSE_BYTES:
@@ -93,7 +100,10 @@ def collect_vantage(
         return VantageSlice(False, None, "vantage response missing boolean 'reachable'")
 
     raw_latency = data.get("latency_ms") if isinstance(data, dict) else None
-    latency = float(raw_latency) if isinstance(raw_latency, (int, float)) else None
+    # bool is a subclass of int — exclude it so a JSON `true` isn't read as 1.0ms.
+    latency = (float(raw_latency)
+               if isinstance(raw_latency, (int, float)) and not isinstance(raw_latency, bool)
+               else None)
     return VantageSlice(True, reachable, "", latency)
 
 

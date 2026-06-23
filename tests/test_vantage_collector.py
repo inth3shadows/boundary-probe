@@ -114,6 +114,25 @@ def test_target_is_sent_as_query_param():
     assert "target=example.com" in seen["url"] and "443" in seen["url"]
 
 
+def test_existing_query_string_is_preserved():
+    # An auth token (or any param) already on the vantage URL must survive.
+    seen = {}
+
+    def _fetch(url, timeout_s):
+        seen["url"] = url
+        return 200, "application/json", b'{"reachable": true}'
+    collect_vantage("https://v.example/check?key=secret", "example.com", 4.0, fetch_fn=_fetch)
+    assert "key=secret" in seen["url"] and "target=example.com" in seen["url"]
+
+
+def test_latency_bool_is_not_coerced_to_float():
+    s = collect_vantage("https://v.example/check", "example.com", 4.0,
+                        fetch_fn=lambda u, t: (200, "application/json",
+                                               b'{"reachable": true, "latency_ms": true}'))
+    assert s.consulted and s.target_reachable_externally is True
+    assert s.latency_ms is None  # JSON `true` must not become 1.0
+
+
 # --- apply_vantage orchestration -------------------------------------------
 
 def _diag(boundary):

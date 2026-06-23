@@ -15,9 +15,11 @@ from boundary_probe.collectors.target_service import collect_target_service
 from boundary_probe.targets import ParsedTarget, parse_target
 
 _WIN = sys.platform == "win32"
+_MAC = sys.platform == "darwin"
 
 FIXTURES = Path(__file__).parent / "fixtures"
 LINUX_FIXTURES = FIXTURES / "linux"
+MAC_FIXTURES = FIXTURES / "mac"
 
 
 def _read(name: str) -> str:
@@ -26,6 +28,15 @@ def _read(name: str) -> str:
 
 def _read_linux(name: str) -> str:
     return (LINUX_FIXTURES / name).read_text(encoding="utf-8")
+
+
+def _read_mac(name: str) -> str:
+    return (MAC_FIXTURES / name).read_text(encoding="utf-8")
+
+
+def _read_posix(name: str) -> str:
+    """Platform-appropriate POSIX fixture: macOS (BSD) text on darwin, else Linux."""
+    return _read_mac(name) if _MAC else _read_linux(name)
 
 
 def _ok(stdout: str, returncode: int = 0) -> CommandResult:
@@ -54,54 +65,77 @@ class FakeRunner:
 # ---------------------------------------------------------------------------
 
 # Route output containing a default gateway (192.168.1.1)
-_ROUTE_OK = _read("route_print.txt") if _WIN else _read_linux("route_default.txt")
+_ROUTE_OK = _read("route_print.txt") if _WIN else _read_posix("route_default.txt")
 
 # Route output with no default gateway entry
-_ROUTE_NO_DEFAULT = (
-    "127.0.0.0  255.0.0.0  On-link  127.0.0.1\n"
-    if _WIN
-    else "192.168.1.0/24 dev eth0 proto kernel scope link\n"
-)
+if _WIN:
+    _ROUTE_NO_DEFAULT = "127.0.0.0  255.0.0.0  On-link  127.0.0.1\n"
+elif _MAC:
+    # `route -n get default` with no default route prints no `gateway:` line.
+    _ROUTE_NO_DEFAULT = "   route to: default\ndestination: default\n       mask: default\n"
+else:
+    _ROUTE_NO_DEFAULT = "192.168.1.0/24 dev eth0 proto kernel scope link\n"
 
 # 4-ping success output to 192.168.1.1 (used by gateway tests)
-_PING4_GW_OK = (
-    "\nPing statistics for 192.168.1.1:\n"
-    "    Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),\n"
-    "Approximate round trip times in milli-seconds:\n"
-    "    Minimum = 2ms, Maximum = 3ms, Average = 2ms\n"
-    if _WIN
-    else
-    "PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.\n"
-    "64 bytes from 192.168.1.1: icmp_seq=1 ttl=64 time=2.1 ms\n"
-    "64 bytes from 192.168.1.1: icmp_seq=2 ttl=64 time=2.3 ms\n"
-    "64 bytes from 192.168.1.1: icmp_seq=3 ttl=64 time=2.0 ms\n"
-    "64 bytes from 192.168.1.1: icmp_seq=4 ttl=64 time=2.2 ms\n"
-    "\n--- 192.168.1.1 ping statistics ---\n"
-    "4 packets transmitted, 4 received, 0% packet loss, time 3003ms\n"
-    "rtt min/avg/max/mdev = 2.000/2.150/2.300/0.120 ms\n"
-)
+if _WIN:
+    _PING4_GW_OK = (
+        "\nPing statistics for 192.168.1.1:\n"
+        "    Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),\n"
+        "Approximate round trip times in milli-seconds:\n"
+        "    Minimum = 2ms, Maximum = 3ms, Average = 2ms\n"
+    )
+elif _MAC:
+    _PING4_GW_OK = (
+        "PING 192.168.1.1 (192.168.1.1): 56 data bytes\n"
+        "64 bytes from 192.168.1.1: icmp_seq=0 ttl=64 time=2.1 ms\n"
+        "64 bytes from 192.168.1.1: icmp_seq=1 ttl=64 time=2.3 ms\n"
+        "64 bytes from 192.168.1.1: icmp_seq=2 ttl=64 time=2.0 ms\n"
+        "64 bytes from 192.168.1.1: icmp_seq=3 ttl=64 time=2.2 ms\n"
+        "\n--- 192.168.1.1 ping statistics ---\n"
+        "4 packets transmitted, 4 packets received, 0.0% packet loss\n"
+        "round-trip min/avg/max/stddev = 2.000/2.150/2.300/0.120 ms\n"
+    )
+else:
+    _PING4_GW_OK = (
+        "PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.\n"
+        "64 bytes from 192.168.1.1: icmp_seq=1 ttl=64 time=2.1 ms\n"
+        "64 bytes from 192.168.1.1: icmp_seq=2 ttl=64 time=2.3 ms\n"
+        "64 bytes from 192.168.1.1: icmp_seq=3 ttl=64 time=2.0 ms\n"
+        "64 bytes from 192.168.1.1: icmp_seq=4 ttl=64 time=2.2 ms\n"
+        "\n--- 192.168.1.1 ping statistics ---\n"
+        "4 packets transmitted, 4 received, 0% packet loss, time 3003ms\n"
+        "rtt min/avg/max/mdev = 2.000/2.150/2.300/0.120 ms\n"
+    )
 
 # 4-ping total loss to 192.168.1.1
-_PING4_GW_LOSS = (
-    "Pinging 192.168.1.1 with 32 bytes of data:\n"
-    "Request timed out.\nRequest timed out.\nRequest timed out.\nRequest timed out.\n"
-    "\nPing statistics for 192.168.1.1:\n"
-    "    Packets: Sent = 4, Received = 0, Lost = 4 (100% loss),\n"
-    if _WIN
-    else
-    "PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.\n"
-    "\n--- 192.168.1.1 ping statistics ---\n"
-    "4 packets transmitted, 0 received, 100% packet loss, time 3003ms\n"
-)
+if _WIN:
+    _PING4_GW_LOSS = (
+        "Pinging 192.168.1.1 with 32 bytes of data:\n"
+        "Request timed out.\nRequest timed out.\nRequest timed out.\nRequest timed out.\n"
+        "\nPing statistics for 192.168.1.1:\n"
+        "    Packets: Sent = 4, Received = 0, Lost = 4 (100% loss),\n"
+    )
+elif _MAC:
+    _PING4_GW_LOSS = (
+        "PING 192.168.1.1 (192.168.1.1): 56 data bytes\n"
+        "\n--- 192.168.1.1 ping statistics ---\n"
+        "4 packets transmitted, 0 packets received, 100.0% packet loss\n"
+    )
+else:
+    _PING4_GW_LOSS = (
+        "PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.\n"
+        "\n--- 192.168.1.1 ping statistics ---\n"
+        "4 packets transmitted, 0 received, 100% packet loss, time 3003ms\n"
+    )
 
 # General-purpose ping fixtures (10 pings, various loss levels)
-_PING_SUCCESS = _read("ping_success.txt") if _WIN else _read_linux("ping_success.txt")
-_PING_TOTAL_LOSS = _read("ping_total_loss.txt") if _WIN else _read_linux("ping_total_loss.txt")
-_PING_PARTIAL_LOSS = _read("ping_partial_loss.txt") if _WIN else _read_linux("ping_partial_loss.txt")
+_PING_SUCCESS = _read("ping_success.txt") if _WIN else _read_posix("ping_success.txt")
+_PING_TOTAL_LOSS = _read("ping_total_loss.txt") if _WIN else _read_posix("ping_total_loss.txt")
+_PING_PARTIAL_LOSS = _read("ping_partial_loss.txt") if _WIN else _read_posix("ping_partial_loss.txt")
 
 # Traceroute fixtures
-_TRACERT_COMPLETE = _read("tracert_complete.txt") if _WIN else _read_linux("traceroute_complete.txt")
-_TRACERT_ISP_LOSS = _read("tracert_isp_loss.txt") if _WIN else _read_linux("traceroute_isp_loss.txt")
+_TRACERT_COMPLETE = _read("tracert_complete.txt") if _WIN else _read_posix("traceroute_complete.txt")
+_TRACERT_ISP_LOSS = _read("tracert_isp_loss.txt") if _WIN else _read_posix("traceroute_isp_loss.txt")
 
 
 # ---------------------------------------------------------------------------

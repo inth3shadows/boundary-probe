@@ -24,6 +24,7 @@ _BOOL_FIELDS = (
     "default_route_present",
     "packet_loss_after_hop1",
     "packet_loss_multiple_targets",
+    "captive_portal_detected",
 )
 
 

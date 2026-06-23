@@ -35,6 +35,13 @@ class ProbeConfig:
     vantage_url: str | None = None
     vantage_timeout_s: float = 4.0
 
+    # [captive] — known-content connectivity check (HTTP 204) that detects a
+    # captive portal. On by default (a fixed public endpoint, no user data sent).
+    # Set captive_check_url = "" to disable. Must be http:// — portals intercept
+    # clear HTTP; an https check would just fail TLS and tell us nothing.
+    captive_check_url: str = "http://connectivitycheck.gstatic.com/generate_204"
+    captive_check_s: float = 4.0
+
 
 _DEFAULTS = ProbeConfig()
 
@@ -61,6 +68,7 @@ def _validate(cfg: ProbeConfig) -> None:
         ("target_tcp_s", cfg.target_tcp_s),
         ("tracert_s", cfg.tracert_s),
         ("vantage_timeout_s", cfg.vantage_timeout_s),
+        ("captive_check_s", cfg.captive_check_s),
     ):
         if val <= 0:
             errors.append(f"{name} must be > 0 (got {val})")
@@ -69,6 +77,11 @@ def _validate(cfg: ProbeConfig) -> None:
     # transmitted in cleartext. (Empty/None disables the feature entirely.)
     if cfg.vantage_url is not None and not cfg.vantage_url.startswith("https://"):
         errors.append(f"vantage_url must be an https:// URL (got {cfg.vantage_url!r})")
+
+    # The captive check must be http:// — a portal intercepts clear HTTP and
+    # redirects; an https request would fail TLS and reveal nothing. ("" disables.)
+    if cfg.captive_check_url and not cfg.captive_check_url.startswith("http://"):
+        errors.append(f"captive_check_url must be an http:// URL (got {cfg.captive_check_url!r})")
 
     for name, val in (
         ("path_loss_pct", cfg.path_loss_pct),
@@ -119,6 +132,7 @@ def load_config() -> ProbeConfig:
     thresholds = data.get("thresholds", {})
     timeouts = data.get("timeouts", {})
     vantage = data.get("vantage", {})
+    captive = data.get("captive", {})
 
     raw_vantage_url = vantage.get("url", None)
     vantage_url = str(raw_vantage_url) if raw_vantage_url is not None else None
@@ -157,6 +171,8 @@ def load_config() -> ProbeConfig:
             tracert_s=float(timeouts.get("tracert_s", _DEFAULTS.tracert_s)),
             vantage_url=vantage_url,
             vantage_timeout_s=float(vantage.get("timeout_s", _DEFAULTS.vantage_timeout_s)),
+            captive_check_url=str(captive.get("check_url", _DEFAULTS.captive_check_url)),
+            captive_check_s=float(captive.get("timeout_s", _DEFAULTS.captive_check_s)),
         )
         _validate(cfg)
     except (ValueError, TypeError) as exc:

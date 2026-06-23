@@ -4,6 +4,7 @@ import time
 from dataclasses import dataclass
 
 from boundary_probe.collectors._runner import DefaultRunner, SubprocessRunner
+from boundary_probe.collectors.captive_portal import CaptivePortalSlice, collect_captive_portal
 from boundary_probe.collectors.control_hosts import ControlHostsSlice, collect_control_hosts
 from boundary_probe.collectors.dns import DnsSlice, collect_dns
 from boundary_probe.collectors.gateway import GatewaySlice, collect_gateway
@@ -26,6 +27,7 @@ class CollectionResult:
     target: TargetServiceSlice
     path_primary: PathSlice
     path_secondary: PathSlice | None
+    captive: CaptivePortalSlice
     elapsed_ms: int
 
 
@@ -33,10 +35,12 @@ def collect_signals(
     parsed_target: ParsedTarget,
     runner: SubprocessRunner | None = None,
     skip_path: bool = False,
+    skip_captive: bool = False,
 ) -> CollectionResult:
     """Run all collectors sequentially and return a CollectionResult with the derived SignalSnapshot."""
     r = runner or DefaultRunner()
     t0 = time.monotonic()
+    cfg = load_config()
 
     gateway = collect_gateway(r)
     dns = collect_dns(parsed_target.host)
@@ -44,7 +48,12 @@ def collect_signals(
     controls = collect_control_hosts(r)
     target = collect_target_service(parsed_target, r)
 
-    secondary_target = load_config().secondary_target
+    if skip_captive or not cfg.captive_check_url:
+        captive = collect_captive_portal(check_url="")  # disabled -> checked=False
+    else:
+        captive = collect_captive_portal(cfg.captive_check_url, cfg.captive_check_s)
+
+    secondary_target = cfg.secondary_target
 
     if skip_path:
         path_primary = PathSlice(raw_hops=[], target=parsed_target.host, completed=False,
@@ -68,6 +77,7 @@ def collect_signals(
         default_route_present=gateway.gateway_ip is not None,
         packet_loss_after_hop1=path_signals.packet_loss_after_hop1,
         packet_loss_multiple_targets=path_signals.packet_loss_multiple_targets,
+        captive_portal_detected=captive.portal_detected,
     )
 
     elapsed_ms = int((time.monotonic() - t0) * 1000)
@@ -80,5 +90,6 @@ def collect_signals(
         target=target,
         path_primary=path_primary,
         path_secondary=path_secondary,
+        captive=captive,
         elapsed_ms=elapsed_ms,
     )

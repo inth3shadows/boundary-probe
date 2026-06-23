@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+from boundary_probe.collectors.captive_portal import CaptivePortalSlice
 from boundary_probe.collectors.control_hosts import ControlHostsSlice
 from boundary_probe.collectors.dns import DnsSlice
 from boundary_probe.collectors.gateway import GatewaySlice
@@ -17,6 +18,8 @@ _IP_OK = IpConnectivitySlice(ok=True, target_ip="1.1.1.1", loss_pct=0.0, avg_rtt
 _IP_FAIL = IpConnectivitySlice(ok=False, target_ip="1.1.1.1", loss_pct=100.0, avg_rtt_ms=None, note="timeout")
 _CONTROLS_OK = ControlHostsSlice(all_ok=True, ok_count=4, total=4, results=[], note="")
 _TARGET = TargetServiceSlice(ok=True, method="ping", target_host="example.com", target_port=None, elapsed_ms=50, note="")
+_CAPTIVE_CLEAN = CaptivePortalSlice(checked=True, portal_detected=False, note="")
+_CAPTIVE_PORTAL = CaptivePortalSlice(checked=True, portal_detected=True, note="HTTP 302")
 _PATH = PathSlice(
     raw_hops=[
         {"index": 1, "host": "192.168.1.1", "loss_pct": 0.0, "rtt_ms": 2.0},
@@ -38,6 +41,7 @@ def test_collect_signals_happy_path_no_secondary():
         patch(f"{_MOD}.collect_ip_connectivity", return_value=_IP_OK),
         patch(f"{_MOD}.collect_control_hosts", return_value=_CONTROLS_OK),
         patch(f"{_MOD}.collect_target_service", return_value=_TARGET),
+        patch(f"{_MOD}.collect_captive_portal", return_value=_CAPTIVE_CLEAN),
         patch(f"{_MOD}.collect_path", return_value=_PATH),
     ):
         result = collect_signals(target, runner=MagicMock())
@@ -60,6 +64,7 @@ def test_collect_signals_ip_fail_triggers_secondary_path():
         patch(f"{_MOD}.collect_ip_connectivity", return_value=_IP_FAIL),
         patch(f"{_MOD}.collect_control_hosts", return_value=_CONTROLS_OK),
         patch(f"{_MOD}.collect_target_service", return_value=_TARGET),
+        patch(f"{_MOD}.collect_captive_portal", return_value=_CAPTIVE_CLEAN),
         patch(f"{_MOD}.collect_path", mock_path),
     ):
         result = collect_signals(target, runner=MagicMock())
@@ -78,6 +83,7 @@ def test_collect_signals_skip_path():
         patch(f"{_MOD}.collect_ip_connectivity", return_value=_IP_OK),
         patch(f"{_MOD}.collect_control_hosts", return_value=_CONTROLS_OK),
         patch(f"{_MOD}.collect_target_service", return_value=_TARGET),
+        patch(f"{_MOD}.collect_captive_portal", return_value=_CAPTIVE_CLEAN),
         patch(f"{_MOD}.collect_path", mock_path),
     ):
         result = collect_signals(target, runner=MagicMock(), skip_path=True)
@@ -85,3 +91,40 @@ def test_collect_signals_skip_path():
     mock_path.assert_not_called()
     assert result.path_secondary is None
     assert "skipped" in result.path_primary.note
+
+
+def test_collect_signals_captive_portal_flows_to_snapshot():
+    target = parse_target("example.com")
+    with (
+        patch(f"{_MOD}.collect_gateway", return_value=_GATEWAY),
+        patch(f"{_MOD}.collect_dns", return_value=_DNS),
+        patch(f"{_MOD}.collect_ip_connectivity", return_value=_IP_OK),
+        patch(f"{_MOD}.collect_control_hosts", return_value=_CONTROLS_OK),
+        patch(f"{_MOD}.collect_target_service", return_value=_TARGET),
+        patch(f"{_MOD}.collect_path", return_value=_PATH),
+        patch(f"{_MOD}.collect_captive_portal", return_value=_CAPTIVE_PORTAL),
+    ):
+        result = collect_signals(target, runner=MagicMock())
+
+    assert result.captive.portal_detected is True
+    assert result.snapshot.captive_portal_detected is True
+
+
+def test_collect_signals_skip_captive_makes_no_check():
+    # skip_captive must short-circuit the captive collector entirely (no network).
+    target = parse_target("example.com")
+    captive = MagicMock(return_value=_CAPTIVE_CLEAN)
+    with (
+        patch(f"{_MOD}.collect_gateway", return_value=_GATEWAY),
+        patch(f"{_MOD}.collect_dns", return_value=_DNS),
+        patch(f"{_MOD}.collect_ip_connectivity", return_value=_IP_OK),
+        patch(f"{_MOD}.collect_control_hosts", return_value=_CONTROLS_OK),
+        patch(f"{_MOD}.collect_target_service", return_value=_TARGET),
+        patch(f"{_MOD}.collect_path", return_value=_PATH),
+        patch(f"{_MOD}.collect_captive_portal", captive),
+    ):
+        result = collect_signals(target, runner=MagicMock(), skip_captive=True)
+
+    # called with an empty url (disabled), never the real endpoint
+    captive.assert_called_once_with(check_url="")
+    assert result.snapshot.captive_portal_detected is False

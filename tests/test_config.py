@@ -112,6 +112,36 @@ def test_vantage_timeout_must_be_positive(monkeypatch, tmp_path):
         load_config()
 
 
+def test_captive_check_default_is_http_204(monkeypatch, tmp_path):
+    monkeypatch.setenv("BOUNDARY_PROBE_CONFIG", str(tmp_path / "nope.toml"))
+    cfg = load_config()
+    assert cfg.captive_check_url.startswith("http://")
+    assert cfg.captive_check_s == 4.0
+
+
+def test_captive_check_override_and_disable(monkeypatch, tmp_path):
+    _write_config(tmp_path, '[captive]\ncheck_url = ""\ntimeout_s = 2.5\n')
+    monkeypatch.setenv("BOUNDARY_PROBE_CONFIG", str(tmp_path / "config.toml"))
+    cfg = load_config()
+    assert cfg.captive_check_url == ""  # disabled
+    assert cfg.captive_check_s == 2.5
+
+
+def test_captive_check_url_must_be_http(monkeypatch, tmp_path):
+    # https would just fail TLS behind a portal; require http (or "" to disable).
+    _write_config(tmp_path, '[captive]\ncheck_url = "https://example/generate_204"\n')
+    monkeypatch.setenv("BOUNDARY_PROBE_CONFIG", str(tmp_path / "config.toml"))
+    with pytest.raises(SystemExit):
+        load_config()
+
+
+def test_captive_timeout_must_be_positive(monkeypatch, tmp_path):
+    _write_config(tmp_path, '[captive]\ntimeout_s = 0\n')
+    monkeypatch.setenv("BOUNDARY_PROBE_CONFIG", str(tmp_path / "config.toml"))
+    with pytest.raises(SystemExit):
+        load_config()
+
+
 def test_toml_overrides_timeout(monkeypatch, tmp_path):
     _write_config(tmp_path, "[timeouts]\ntracert_s = 60.0\n")
     monkeypatch.setenv("BOUNDARY_PROBE_CONFIG", str(tmp_path / "config.toml"))

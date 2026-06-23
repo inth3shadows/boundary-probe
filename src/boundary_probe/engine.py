@@ -76,6 +76,24 @@ def _router_gateway(_: SignalSnapshot) -> Diagnosis:
     )
 
 
+def _captive_portal(_: SignalSnapshot) -> Diagnosis:
+    return Diagnosis(
+        boundary="captive-portal",
+        confidence=0.97,
+        summary="A captive portal is intercepting traffic — the network requires sign-in or acceptance before it will pass real internet traffic.",
+        evidence=[
+            EvidenceItem("gateway", "The local gateway is reachable and forwarding."),
+            EvidenceItem("captive-portal", "A known-content connectivity check was intercepted (a redirect or unexpected response where an empty 204 was expected)."),
+            EvidenceItem("dns", "Name resolution may appear to work because the portal answers DNS — this does not mean the internet is reachable."),
+        ],
+        remediation=[
+            "Open a web browser and load any http:// page to trigger the portal's sign-in screen, then accept the terms or log in.",
+            "If you already signed in, the session may have expired — re-open the portal page to re-authenticate.",
+            "On a network you do not control (hotel, airport, café), captive sign-in is expected; on your own network, check for an interception/parental-control proxy.",
+        ],
+    )
+
+
 def _wan_gateway(signals: SignalSnapshot) -> Diagnosis:
     return Diagnosis(
         boundary="wan-gateway",
@@ -215,6 +233,11 @@ def _inconclusive(signals: SignalSnapshot) -> Diagnosis:
 RULES: list[Rule] = [
     Rule("local-device", {"gateway_functional": False, "default_route_present": False}, _local_device),
     Rule("router-gateway", {"gateway_functional": False}, _router_gateway),
+    # Captive portal is decisive and must precede every rule that keys on the
+    # (portal-faked) green signals — DNS, ISP, remote-service, and healthy would
+    # all misfire otherwise. It can only be detected when the gateway forwards,
+    # so it sits just below the gateway-down rows.
+    Rule("captive-portal", {"captive_portal_detected": True}, _captive_portal),
     Rule("wan-gateway", {"gateway_functional": True, "ip_connectivity_ok": False, "dns_ok": False}, _wan_gateway),
     Rule("dns", {"ip_connectivity_ok": True, "dns_ok": False}, _dns),
     Rule(

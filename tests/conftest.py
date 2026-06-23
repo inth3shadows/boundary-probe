@@ -50,6 +50,7 @@ def tmp_db(tmp_path, monkeypatch):
 
 @pytest.fixture
 def fake_collection_result():
+    from boundary_probe.collectors.captive_portal import CaptivePortalSlice
     from boundary_probe.collectors.control_hosts import ControlHostResult, ControlHostsSlice
     from boundary_probe.collectors.dns import DnsSlice
     from boundary_probe.collectors.gateway import GatewaySlice
@@ -78,5 +79,6 @@ def fake_collection_result():
                                   target_port=None, elapsed_ms=100, note="100% packet loss"),
         path_primary=PathSlice(raw_hops=[], target="example.com", completed=False, note=""),
         path_secondary=None,
+        captive=CaptivePortalSlice(checked=True, portal_detected=False, note=""),
         elapsed_ms=5000,
     )

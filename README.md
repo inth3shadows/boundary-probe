@@ -11,8 +11,11 @@ The five boundaries it answers: **local device / LAN**, **router-gateway**, **DN
 
 ## Demo
 
-<!-- TODO: record with `asciinema rec demo.cast`, convert with `agg demo.cast demo.gif` -->
-> Demo GIF coming soon. To try it yourself: `pip install boundary-probe` then `boundary-probe diagnose 8.8.8.8`
+The local web UI (`boundary-probe ui`) shows each run's boundary verdict, confidence band, evidence, collector measurements, and raw signal flags. Here it is catching a DNS failure — connectivity is up, but name resolution is down:
+
+![Boundary Probe web UI showing a DNS-failure diagnosis: the dns boundary at Moderate confidence, with evidence, collector details, and color-coded signal flags](docs/images/ui-demo.png)
+
+Prefer the terminal? `boundary-probe diagnose <target>` prints the same diagnosis as plain text. To try it yourself: `pip install boundary-probe` then `boundary-probe diagnose 8.8.8.8`.
 
 ## How It Works
 

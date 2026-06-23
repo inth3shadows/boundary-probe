@@ -219,13 +219,17 @@ def test_control_hosts_slice_ok_count(monkeypatch, tmp_path):
     from boundary_probe.collectors._runner import CommandResult
     from boundary_probe.collectors.control_hosts import collect_control_hosts
 
+    # Fixture format must match the platform's parser (the collector dispatches
+    # parse_ping_output by sys.platform): Windows / macOS(BSD) / Linux each differ.
     FIXTURES = Path(__file__).parent / "fixtures"
     if sys.platform == "win32":
-        success_out = (FIXTURES / "ping_success.txt").read_text(encoding="utf-8")
-        loss_out = (FIXTURES / "ping_total_loss.txt").read_text(encoding="utf-8")
+        subdir = ""
+    elif sys.platform == "darwin":
+        subdir = "mac"
     else:
-        success_out = (FIXTURES / "linux" / "ping_success.txt").read_text(encoding="utf-8")
-        loss_out = (FIXTURES / "linux" / "ping_total_loss.txt").read_text(encoding="utf-8")
+        subdir = "linux"
+    success_out = (FIXTURES / subdir / "ping_success.txt").read_text(encoding="utf-8")
+    loss_out = (FIXTURES / subdir / "ping_total_loss.txt").read_text(encoding="utf-8")
 
     class FakeRunner:
         def run(self, argv, timeout_s):

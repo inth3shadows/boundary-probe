@@ -62,6 +62,23 @@ def test_debug_mode_prints_to_stderr(capsys, monkeypatch):
     assert "ping" in err
 
 
+def test_run_forces_c_locale():
+    """ping/traceroute output must be English for the parsers; the runner pins
+    LC_ALL/LANG=C so a localized environment can't produce false 100% loss."""
+    proc = _make_proc()
+    with patch("subprocess.run", return_value=proc) as mock_run:
+        DefaultRunner().run(["ping", "1.1.1.1"], timeout_s=5.0)
+    _, kwargs = mock_run.call_args
+    env = kwargs.get("env")
+    assert env is not None
+    assert env.get("LC_ALL") == "C"
+    assert env.get("LANG") == "C"
+    # existing environment is preserved (e.g. PATH), not replaced wholesale
+    import os
+    if "PATH" in os.environ:
+        assert "PATH" in env
+
+
 def test_creationflags_on_windows_only():
     """CREATE_NO_WINDOW is passed as creationflags on Windows; 0 on Linux."""
     proc = _make_proc()

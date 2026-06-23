@@ -34,6 +34,23 @@ class SignalSnapshot:
         return self.gateway_reachable or self.ip_connectivity_ok or self.control_hosts_ok
 
 
+@dataclass(slots=True, frozen=True)
+class VantageSlice:
+    """Result of an optional external-vantage reachability check.
+
+    Carries a tri-state: ``consulted`` is False when no vantage was configured
+    or the call failed (fail-open), in which case ``target_reachable_externally``
+    is None and the engine refinement is a no-op. This is deliberately NOT a
+    field on ``SignalSnapshot`` — it must never enter the pure decision table;
+    it is applied after classification by ``engine.refine``.
+    """
+
+    consulted: bool
+    target_reachable_externally: bool | None
+    note: str
+    latency_ms: float | None = None
+
+
 @dataclass(slots=True)
 class EvidenceItem:
     label: str

@@ -191,9 +191,65 @@ control_hosts_s = 10.0     # control-host probes
 target_ping_s = 8.0        # target ping
 target_tcp_s = 5.0         # target TCP connect (when a port is known)
 tracert_s = 60.0           # traceroute ceiling
+
+[vantage]
+# Opt-in. Leave unset (the default) and boundary-probe makes NO outbound call.
+# url      = "https://probe.example.com/check"   # your external vantage endpoint
+# timeout_s = 4.0                                 # must be > 0; https only
 ```
 
 The values shown above are the defaults — copy only the lines you want to change.
+
+### Remote vantage (opt-in)
+
+A single machine cannot tell "the target is down for everyone" from "just my
+connection's path." If you run an external endpoint (e.g. a tiny service on a
+homelab over a Cloudflare Tunnel), boundary-probe can consult it to break that
+tie. It is **off by default** and only ever runs for the `isp-upstream` and
+`remote-service` verdicts.
+
+```
+boundary-probe diagnose github.com --vantage https://probe.example.com/check
+```
+
+(or set `[vantage].url` in the config above). When it reaches out, it prints a
+one-line `note:` to stderr naming the destination — the outbound call from an
+otherwise-local tool is never silent.
+
+**What is sent / safety:**
+- Only the **target** you are diagnosing is sent (as `?target=<host[:port]>`) —
+  never your history, gateway, local subnet, or config.
+- The URL **must be `https`** (the target is not sent in cleartext), TLS is
+  always verified, redirects are **not** followed, and the response is
+  size-capped and must be JSON.
+- The vantage result is **advisory**: it adjusts confidence and adds an evidence
+  line, but never changes the verdict — a misbehaving vantage cannot mislead the
+  diagnosis. If the vantage is unreachable or misbehaves, the run proceeds
+  exactly as if it were off (fail-open).
+
+**Reference endpoint** — the contract is one query param in, one JSON field out
+(`{"reachable": <bool>}`; optional `latency_ms`). A minimal implementation:
+
+```python
+# Flask reference vantage — checks whether <target> is reachable from here.
+# WARNING for operators: this connects to an arbitrary ?target=. Restrict who
+# can reach this endpoint (e.g. Cloudflare Access) and/or refuse RFC-1918 and
+# link-local targets so it is not an open relay into your LAN.
+import socket
+from flask import Flask, request, jsonify
+
+app = Flask(__name__)
+
+@app.get("/check")
+def check():
+    target = request.args.get("target", "")
+    host, _, port = target.partition(":")
+    try:
+        socket.create_connection((host, int(port or 443)), timeout=4)
+        return jsonify(reachable=True)
+    except OSError:
+        return jsonify(reachable=False)
+```
 
 ## What to Do When Something Breaks
 

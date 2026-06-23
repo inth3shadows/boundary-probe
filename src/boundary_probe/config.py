@@ -30,6 +30,11 @@ class ProbeConfig:
     target_tcp_s: float = 5.0
     tracert_s: float = 60.0
 
+    # [vantage] — opt-in external reachability check. Unset = feature off; the
+    # tool never makes an outbound call. See docs/USAGE.md.
+    vantage_url: str | None = None
+    vantage_timeout_s: float = 4.0
+
 
 _DEFAULTS = ProbeConfig()
 
@@ -55,9 +60,15 @@ def _validate(cfg: ProbeConfig) -> None:
         ("target_ping_s", cfg.target_ping_s),
         ("target_tcp_s", cfg.target_tcp_s),
         ("tracert_s", cfg.tracert_s),
+        ("vantage_timeout_s", cfg.vantage_timeout_s),
     ):
         if val <= 0:
             errors.append(f"{name} must be > 0 (got {val})")
+
+    # The vantage call sends the target off-box; require https so it is never
+    # transmitted in cleartext. (Empty/None disables the feature entirely.)
+    if cfg.vantage_url is not None and not cfg.vantage_url.startswith("https://"):
+        errors.append(f"vantage_url must be an https:// URL (got {cfg.vantage_url!r})")
 
     for name, val in (
         ("path_loss_pct", cfg.path_loss_pct),
@@ -107,6 +118,10 @@ def load_config() -> ProbeConfig:
     probes = data.get("probes", {})
     thresholds = data.get("thresholds", {})
     timeouts = data.get("timeouts", {})
+    vantage = data.get("vantage", {})
+
+    raw_vantage_url = vantage.get("url", None)
+    vantage_url = str(raw_vantage_url) if raw_vantage_url is not None else None
 
     raw_hosts = probes.get("control_hosts", None)
     if raw_hosts is None:
@@ -140,6 +155,8 @@ def load_config() -> ProbeConfig:
             target_ping_s=float(timeouts.get("target_ping_s", _DEFAULTS.target_ping_s)),
             target_tcp_s=float(timeouts.get("target_tcp_s", _DEFAULTS.target_tcp_s)),
             tracert_s=float(timeouts.get("tracert_s", _DEFAULTS.tracert_s)),
+            vantage_url=vantage_url,
+            vantage_timeout_s=float(vantage.get("timeout_s", _DEFAULTS.vantage_timeout_s)),
         )
         _validate(cfg)
     except (ValueError, TypeError) as exc:

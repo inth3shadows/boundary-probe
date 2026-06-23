@@ -143,9 +143,12 @@ def test_measurement_pass_detects_consistency_mismatch(tmp_path, capsys):
     assert "gateway_reachable" in out
 
 
-def test_measurement_pass_flags_ambiguous_hop(tmp_path, capsys):
+def test_measurement_pass_flags_ambiguous_hop(monkeypatch, tmp_path, capsys):
     # A hop whose loss% sits within the ambiguous band around the 20% threshold
     # is where a real capture would test the threshold — it must be flagged.
+    # Pin to defaults: the band depends on path_loss_pct, and main() reads the
+    # ambient config otherwise (a non-default user config would skew the band).
+    monkeypatch.setenv("BOUNDARY_PROBE_CONFIG", str(tmp_path / "no-config.toml"))
     import json
     (tmp_path / "ambig.json").write_text(json.dumps({
         "scenario": "ambig",

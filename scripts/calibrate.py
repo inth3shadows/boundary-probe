@@ -276,7 +276,8 @@ def _print_measurement_pass(files: list[Path], threshold: float) -> None:
     print()
     print("A consistency MISMATCH means the stored boolean disagrees with the raw "
           "measurement — a capture-pipeline bug, not a calibration signal. "
-          "Ambiguous hops are where the 20% threshold is worth field-testing.")
+          f"Ambiguous hops are where the {threshold:.0f}% threshold is worth "
+          "field-testing.")
 
 
 def main(argv: list[str]) -> int:

@@ -143,6 +143,39 @@ def test_measurement_pass_detects_consistency_mismatch(tmp_path, capsys):
     assert "gateway_reachable" in out
 
 
+def test_accuracy_reports_overall_and_recall(capsys):
+    mod = _load_calibrate()
+    rc = mod.main(["calibrate.py"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "Classification accuracy" in out
+    assert "overall:" in out and "recall" in out
+
+
+def test_accuracy_surfaces_misclassification(tmp_path, capsys):
+    # A fixture whose ground truth differs from what the engine predicts must
+    # show up as an off-diagonal error (recall 0.00, "misclassified as ...").
+    import json
+    # All-green signals classify as `healthy`, but we label it remote-service.
+    (tmp_path / "mislabel.json").write_text(json.dumps({
+        "scenario": "mislabel",
+        "expected_boundary": "remote-service",
+        "signals": {
+            "gateway_reachable": True, "dns_ok": True, "ip_connectivity_ok": True,
+            "control_hosts_ok": True, "target_service_ok": True,
+            "default_route_present": True,
+            "packet_loss_after_hop1": False, "packet_loss_multiple_targets": False,
+        },
+    }), encoding="utf-8")
+    mod = _load_calibrate()
+    rc = mod.main(["calibrate.py", str(tmp_path)])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "overall: 0/1 correct (0.0%)" in out
+    assert "healthy×1" in out  # predicted healthy where truth was remote-service
+    assert "misclassification" in out
+
+
 def test_measurement_pass_flags_ambiguous_hop(monkeypatch, tmp_path, capsys):
     # A hop whose loss% sits within the ambiguous band around the 20% threshold
     # is where a real capture would test the threshold — it must be flagged.

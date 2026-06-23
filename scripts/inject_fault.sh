@@ -193,10 +193,19 @@ inject() {
     isp-loss)
       # Hop 1 (gateway) and DNS clean, loss begins beyond: a prio qdisc sends
       # gateway+resolver traffic to a lossless band and everything else through
-      # netem 35% loss, so packet_loss_after_hop1 fires across multiple targets
+      # netem loss, so packet_loss_after_hop1 fires across multiple targets
       # while dns_ok / gateway stay green.
+      #
+      # The loss % is overridable so injected fixtures can SWEEP the engine's
+      # path-loss threshold (default 20%) instead of always sitting far above it:
+      #   sudo BP_ISP_LOSS_PCT=22 scripts/inject_fault.sh capture isp-loss
+      # A capture at 15/22/25% exercises the ambiguous band that calibrate.py's
+      # measurement pass flags; the default 50% clears the bar cleanly (the prior
+      # behaviour). Name swept captures distinctly (e.g. isp-loss-22) so they do
+      # not overwrite each other.
+      local isp_loss_pct="${BP_ISP_LOSS_PCT:-50}"
       ip netns exec "$NS" tc qdisc add dev "$VETH_C" root handle 1: prio bands 3
-      ip netns exec "$NS" tc qdisc add dev "$VETH_C" parent 1:3 handle 30: netem loss 50% 25%
+      ip netns exec "$NS" tc qdisc add dev "$VETH_C" parent 1:3 handle 30: netem loss "${isp_loss_pct}%" 25%
       ip netns exec "$NS" tc filter add dev "$VETH_C" protocol ip parent 1:0 prio 1 \
         u32 match ip dst "$GW_IP/32" flowid 1:1
       ip netns exec "$NS" tc filter add dev "$VETH_C" protocol ip parent 1:0 prio 1 \

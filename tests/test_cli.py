@@ -130,11 +130,12 @@ def test_build_capture_payload_includes_signals_and_measurements(fake_collection
     parsed = parse_target("example.com")
     payload = _build_capture_payload("scn", parsed, fake_collection_result, "2026-06-21T00:00:00Z")
 
-    # signals block reconstructs the snapshot (all 8 flags present)
+    # signals block reconstructs the snapshot (all flags present)
     assert payload["signals"] == {
         "gateway_reachable": True, "dns_ok": True, "ip_connectivity_ok": True,
         "control_hosts_ok": True, "target_service_ok": False, "default_route_present": True,
         "packet_loss_after_hop1": False, "packet_loss_multiple_targets": False,
+        "captive_portal_detected": False,
     }
     # measurements preserve the raw per-collector data the booleans discard
     m = payload["measurements"]

@@ -73,6 +73,7 @@ boundary-probe diagnose example.com --json
 | Boundary | What it means |
 |----------|--------------|
 | `router-gateway` | Your local gateway (router) is not responding. The problem is between your device and the router. |
+| `captive-portal` | A captive portal (hotel/airport/café wifi, or an intercepting proxy) is gating the connection — you need to sign in or accept terms before real traffic passes. Detected even when DNS and pings look healthy, because the portal fakes them. |
 | `dns` | Your device can reach the internet by IP, but name resolution is failing. Something is wrong with your DNS configuration. |
 | `isp-upstream` | Your LAN and DNS are healthy, but packet loss begins after the first hop and affects multiple destinations. Your ISP or the path beyond it is degraded. |
 | `remote-service` | Everything between you and the internet is healthy. The specific service or website you're reaching is the problem. |
@@ -196,6 +197,13 @@ tracert_s = 60.0           # traceroute ceiling
 # Opt-in. Leave unset (the default) and boundary-probe makes NO outbound call.
 # url      = "https://probe.example.com/check"   # your external vantage endpoint
 # timeout_s = 4.0                                 # must be > 0; https only
+
+[captive]
+# Captive-portal detection (on by default). Sends no user data — just an HTTP
+# GET to a fixed public 204 endpoint, exactly as every OS does. Set check_url
+# to "" to disable, or per-run with `diagnose --no-captive-check`.
+check_url = "http://connectivitycheck.gstatic.com/generate_204"  # must be http://
+timeout_s = 4.0                                                   # must be > 0
 ```
 
 The values shown above are the defaults — copy only the lines you want to change.

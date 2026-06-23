@@ -33,6 +33,7 @@ def tmp_db(tmp_path, monkeypatch):
 
 
 def _make_collection_result():
+    from boundary_probe.collectors.captive_portal import CaptivePortalSlice
     from boundary_probe.collectors.control_hosts import ControlHostResult, ControlHostsSlice
     from boundary_probe.collectors.dns import DnsSlice
     from boundary_probe.collectors.gateway import GatewaySlice
@@ -62,6 +63,7 @@ def _make_collection_result():
         path_primary=PathSlice(raw_hops=[{"index": 1, "loss_pct": 0.0, "rtt_ms": 2.0, "host": "192.168.1.1"}],
                                target="example.com", completed=False, note=""),
         path_secondary=None,
+        captive=CaptivePortalSlice(checked=True, portal_detected=False, note=""),
         elapsed_ms=5000,
     )
 

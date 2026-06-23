@@ -65,6 +65,9 @@ def _build_parser() -> argparse.ArgumentParser:
                                       "verdict is isp-upstream/remote-service, asks this "
                                       "endpoint whether the target is reachable from "
                                       "elsewhere. Sends only the target. Overrides config.")
+    diagnose_parser.add_argument("--no-captive-check", action="store_true", dest="no_captive",
+                                 help="Skip the captive-portal connectivity check "
+                                      "(an HTTP request to a fixed public 204 endpoint).")
 
     escalate_parser = subparsers.add_parser(
         "escalate",
@@ -162,6 +165,10 @@ def _print_config() -> None:
     print("[vantage]")
     print(f"  url               {cfg.vantage_url or '(disabled)'}")
     print(f"  timeout           {cfg.vantage_timeout_s}s")
+    print()
+    print("[captive]")
+    print(f"  check_url         {cfg.captive_check_url or '(disabled)'}")
+    print(f"  timeout           {cfg.captive_check_s}s")
 
 
 def _format_collector_details(result: CollectionResult) -> str:
@@ -190,6 +197,15 @@ def _format_collector_details(result: CollectionResult) -> str:
 
     ctrl = result.controls
     lines.append(f"  Controls: {ctrl.ok_count}/{ctrl.total} healthy")
+
+    cap = result.captive
+    if not cap.checked:
+        cap_str = "not checked"
+    elif cap.portal_detected:
+        cap_str = "PORTAL DETECTED"
+    else:
+        cap_str = "clean (no portal)"
+    lines.append(f"  Captive:  {cap_str}")
 
     tgt = result.target
     lines.append(f"  Target:   {tgt.method} ({tgt.elapsed_ms}ms)")
@@ -270,7 +286,7 @@ def _maybe_consult_vantage(diagnosis, parsed, vantage_override: str | None):
 
 
 def _print_diagnose(target: str, as_json: bool, history: int | None, skip_path: bool,
-                    vantage_url: str | None = None) -> None:
+                    vantage_url: str | None = None, skip_captive: bool = False) -> None:
     if history is not None:
         if history <= 0:
             print("error: --history N must be positive", file=sys.stderr)
@@ -285,7 +301,7 @@ def _print_diagnose(target: str, as_json: bool, history: int | None, skip_path: 
         sys.exit(2)
 
     try:
-        result = collect_signals(parsed, skip_path=skip_path)
+        result = collect_signals(parsed, skip_path=skip_path, skip_captive=skip_captive)
     except FileNotFoundError as exc:
         print(f"error: required network tool not found ({exc}).", file=sys.stderr)
         sys.exit(3)
@@ -523,6 +539,7 @@ def main(argv: list[str] | None = None) -> None:
             history=history,
             skip_path=args.no_path,
             vantage_url=args.vantage,
+            skip_captive=args.no_captive,
         )
         return
     if args.command == "escalate":

@@ -16,6 +16,11 @@ class SignalSnapshot:
     default_route_present: bool = True
     packet_loss_after_hop1: bool = False
     packet_loss_multiple_targets: bool = False
+    # True when a known-content connectivity check was intercepted (a redirect or
+    # a non-204 body where an empty 204 was expected) — the fingerprint of a
+    # captive portal. Decisive: a portal makes every ICMP/DNS signal read green,
+    # so without this the engine would call a hijacked network `healthy`.
+    captive_portal_detected: bool = False
 
     @property
     def gateway_functional(self) -> bool:

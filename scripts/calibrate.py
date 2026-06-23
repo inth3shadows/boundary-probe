@@ -280,6 +280,65 @@ def _print_measurement_pass(files: list[Path], threshold: float) -> None:
           "field-testing.")
 
 
+def _accuracy(files: list[Path]) -> tuple[int, int, dict[str, dict]]:
+    """Score predictions against ground truth, keyed by the TRUE boundary.
+
+    The boolean pass reports hit-rate per *predicted* boundary, which hides
+    misclassifications: if every router-gateway fixture is called wan-gateway,
+    `router-gateway` simply shows n=0 there. Keying on truth exposes those
+    off-diagonal errors — the confusion an accuracy number must reflect.
+    Returns (overall_correct, overall_total, per_truth) where per_truth maps a
+    truth boundary to {"n", "correct", "wrong": {predicted: count}}.
+    """
+    per_truth: dict[str, dict] = defaultdict(
+        lambda: {"n": 0, "correct": 0, "wrong": defaultdict(int)}
+    )
+    correct = total = 0
+    for f in files:
+        data = json.loads(f.read_text(encoding="utf-8"))
+        truth = _ground_truth(f.stem, data)
+        if truth is None:
+            continue
+        predicted = diagnose(_snapshot_from(data)).boundary
+        total += 1
+        rec = per_truth[truth]
+        rec["n"] += 1
+        if predicted == truth:
+            correct += 1
+            rec["correct"] += 1
+        else:
+            rec["wrong"][predicted] += 1
+    return correct, total, per_truth
+
+
+def _print_accuracy(correct: int, total: int, per_truth: dict[str, dict]) -> None:
+    print()
+    print("Classification accuracy (predicted vs ground truth)")
+    pct = (correct / total * 100.0) if total else 0.0
+    print(f"  overall: {correct}/{total} correct ({pct:.1f}%)")
+    print()
+    print(f"  {'truth boundary':<16}{'n':>4}{'recall':>9}   misclassified as")
+    print("  " + "-" * 54)
+    misfires = 0
+    for truth in sorted(per_truth):
+        rec = per_truth[truth]
+        recall = (rec["correct"] / rec["n"]) if rec["n"] else 0.0
+        if rec["wrong"]:
+            wrong_str = ", ".join(f"{p}×{c}" for p, c in sorted(rec["wrong"].items()))
+            misfires += sum(rec["wrong"].values())
+        else:
+            wrong_str = "—"
+        print(f"  {truth:<16}{rec['n']:>4}{recall:>9.2f}   {wrong_str}")
+    print()
+    if misfires:
+        print(f"  {misfires} misclassification(s) above — off-diagonal errors the "
+              "boolean-pass hit-rate (keyed on the predicted label) hides.")
+    else:
+        print("  No misclassifications across the labeled fixtures.")
+    print("  Recall is over fixtures, not field outcomes — trustworthy only once "
+          "the real cohort is large (see the cohort warning above).")
+
+
 def main(argv: list[str]) -> int:
     fixtures_dir = Path(argv[1]) if len(argv) > 1 else Path("tests/fixtures")
     files = sorted(fixtures_dir.glob("*.json"))
@@ -292,6 +351,9 @@ def main(argv: list[str]) -> int:
     _print_boolean_pass(
         hardcoded, tally, cohorts, unlabeled, len(files), fixtures_dir
     )
+
+    correct, total, per_truth = _accuracy(files)
+    _print_accuracy(correct, total, per_truth)
 
     threshold = load_config().path_loss_pct
     _print_measurement_pass(files, threshold)

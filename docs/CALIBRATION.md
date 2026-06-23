@@ -53,6 +53,21 @@ substitute for real captures on the high-harm boundaries. `calibrate.py` keeps
 the cohorts apart (see §3) and warns when a high-harm prior is backed by
 injected-only fixtures.
 
+**Sweep the path-loss threshold.** The `isp-loss` scenario defaults to 50% loss,
+which sits far above the 20% `path_loss_pct` threshold and so never tests it.
+Override the loss to land in the ambiguous band (10–30%) that the measurement
+pass flags, and name each capture distinctly so they don't overwrite:
+
+```
+sudo BP_ISP_LOSS_PCT=15 scripts/inject_fault.sh capture isp-loss   # then rename -> isp-loss-15.json
+sudo BP_ISP_LOSS_PCT=22 scripts/inject_fault.sh capture isp-loss   #             -> isp-loss-22.json
+sudo BP_ISP_LOSS_PCT=25 scripts/inject_fault.sh capture isp-loss   #             -> isp-loss-25.json
+```
+
+A 22% capture is exactly the case `calibrate.py`'s measurement pass calls
+*ambiguous* — these are where the threshold earns or loses trust. Still
+injected (synthetic shape); they widen threshold coverage, not the real cohort.
+
 ### 1b. Scrub (public repo)
 
 By default `capture` redacts globally-routable IPs from the traceroute hops and

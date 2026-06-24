@@ -199,11 +199,17 @@ inject() {
       # The loss % is overridable so injected fixtures can SWEEP the engine's
       # path-loss threshold (default 20%) instead of always sitting far above it:
       #   sudo BP_ISP_LOSS_PCT=22 scripts/inject_fault.sh capture isp-loss
-      # A capture at 15/22/25% exercises the ambiguous band that calibrate.py's
+      # A capture at 15/22/25% exercises the ambiguous band calibrate.py's
       # measurement pass flags; the default 50% clears the bar cleanly (the prior
-      # behaviour). Name swept captures distinctly (e.g. isp-loss-22) so they do
-      # not overwrite each other.
+      # behaviour). Each run writes the SAME tests/fixtures/isp-loss.json, so to
+      # keep several, rename after each capture:
+      #   mv tests/fixtures/isp-loss.json tests/fixtures/isp-loss-22.json
+      # (the capture name must stay 'isp-loss' — it keys the ground-truth map.)
       local isp_loss_pct="${BP_ISP_LOSS_PCT:-50}"
+      if ! [[ "$isp_loss_pct" =~ ^[0-9]+$ ]] || (( isp_loss_pct < 1 || isp_loss_pct > 100 )); then
+        echo "error: BP_ISP_LOSS_PCT must be an integer 1-100 (got '$isp_loss_pct')" >&2
+        exit 2
+      fi
       ip netns exec "$NS" tc qdisc add dev "$VETH_C" root handle 1: prio bands 3
       ip netns exec "$NS" tc qdisc add dev "$VETH_C" parent 1:3 handle 30: netem loss "${isp_loss_pct}%" 25%
       ip netns exec "$NS" tc filter add dev "$VETH_C" protocol ip parent 1:0 prio 1 \

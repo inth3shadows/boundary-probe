@@ -235,9 +235,10 @@ RULES: list[Rule] = [
     Rule("router-gateway", {"gateway_functional": False}, _router_gateway),
     # Captive portal is decisive and must precede every rule that keys on the
     # (portal-faked) green signals — DNS, ISP, remote-service, and healthy would
-    # all misfire otherwise. It can only be detected when the gateway forwards,
-    # so it sits just below the gateway-down rows.
-    Rule("captive-portal", {"captive_portal_detected": True}, _captive_portal),
+    # all misfire otherwise. The `gateway_functional` guard makes the invariant
+    # explicit (a portal is only reachable when the gateway forwards) so the
+    # build's "gateway is forwarding" evidence stays true regardless of row order.
+    Rule("captive-portal", {"gateway_functional": True, "captive_portal_detected": True}, _captive_portal),
     Rule("wan-gateway", {"gateway_functional": True, "ip_connectivity_ok": False, "dns_ok": False}, _wan_gateway),
     Rule("dns", {"ip_connectivity_ok": True, "dns_ok": False}, _dns),
     Rule(

@@ -21,35 +21,25 @@ Contract (deliberately trivial to implement behind any reverse proxy):
 from __future__ import annotations
 
 import json
-import socket
-import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable
 
+from boundary_probe.collectors._http import FETCH_ERRORS, USER_AGENT, no_redirect_opener
 from boundary_probe.engine import _VANTAGE_REFINABLE, refine
 from boundary_probe.models import Diagnosis, VantageSlice
 
 _MAX_RESPONSE_BYTES = 64 * 1024
-_USER_AGENT = "boundary-probe"
 
 # (status, content_type, body) — the seam a test injects to avoid real network.
 FetchFn = Callable[[str, float], "tuple[int, str, bytes]"]
 
 
-class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    """Refuse to follow any redirect — closes the metadata-endpoint pivot."""
-
-    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: D401
-        return None
-
-
 def _default_fetch(url: str, timeout_s: float) -> tuple[int, str, bytes]:
     req = urllib.request.Request(
-        url, method="GET", headers={"User-Agent": _USER_AGENT, "Accept": "application/json"}
+        url, method="GET", headers={"User-Agent": USER_AGENT, "Accept": "application/json"}
     )
-    opener = urllib.request.build_opener(_NoRedirect())
-    with opener.open(req, timeout=timeout_s) as resp:  # default TLS context verifies certs
+    with no_redirect_opener().open(req, timeout=timeout_s) as resp:  # default TLS context verifies certs
         ctype = resp.headers.get("Content-Type", "")
         body = resp.read(_MAX_RESPONSE_BYTES + 1)
         return getattr(resp, "status", 200), ctype, body
@@ -76,8 +66,7 @@ def collect_vantage(
 
     try:
         status, ctype, body = fetch_fn(url, timeout_s)
-    except (urllib.error.HTTPError, urllib.error.URLError, socket.timeout,
-            TimeoutError, OSError, ValueError) as exc:
+    except FETCH_ERRORS as exc:
         return VantageSlice(False, None, f"vantage unreachable: {exc}")
 
     # The real _default_fetch never reaches here for a non-2xx response — urllib

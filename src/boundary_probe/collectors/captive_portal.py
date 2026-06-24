@@ -25,8 +25,9 @@ import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from boundary_probe.collectors._http import FETCH_ERRORS, USER_AGENT, no_redirect_opener
+
 _MAX_BODY_BYTES = 4096
-_USER_AGENT = "boundary-probe"
 # Google's Android connectivity-check endpoint: returns 204 No Content when the
 # path to the internet is clean. Widely reachable and stable; overridable in config.
 DEFAULT_CHECK_URL = "http://connectivitycheck.gstatic.com/generate_204"
@@ -42,23 +43,15 @@ class CaptivePortalSlice:
     note: str
 
 
-class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    """Don't follow redirects — a redirect to a sign-in page IS the portal signal."""
-
-    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: D401
-        return None
-
-
 def _default_fetch(url: str, timeout_s: float) -> tuple[int, int]:
-    req = urllib.request.Request(url, method="GET", headers={"User-Agent": _USER_AGENT})
-    opener = urllib.request.build_opener(_NoRedirect())
+    req = urllib.request.Request(url, method="GET", headers={"User-Agent": USER_AGENT})
     try:
-        with opener.open(req, timeout=timeout_s) as resp:
+        with no_redirect_opener().open(req, timeout=timeout_s) as resp:
             body = resp.read(_MAX_BODY_BYTES + 1)
-            return getattr(resp, "status", 200), len(body)
+            return getattr(resp, "status", 204), len(body)
     except urllib.error.HTTPError as exc:
         # A 3xx surfaces here because redirects are refused; 4xx/5xx also. The
-        # status is what matters; body length is irrelevant for these.
+        # status is what the caller keys on; body length is irrelevant for these.
         return exc.code, 0
 
 
@@ -73,16 +66,25 @@ def collect_captive_portal(
         return CaptivePortalSlice(checked=False, portal_detected=False, note="captive check disabled")
     try:
         status, body_len = fetch_fn(check_url, timeout_s)
-    except (urllib.error.URLError, OSError, ValueError) as exc:
-        # No response at all — could be a dead connection, not a portal. Do not
-        # accuse a portal; let the other signals classify.
+    except FETCH_ERRORS as exc:
+        # No usable response — a dead connection, a timeout, or malformed HTTP.
+        # That is NOT a portal (the check endpoint may simply be unreachable);
+        # leave classification to the other signals.
         return CaptivePortalSlice(checked=False, portal_detected=False, note=f"check failed: {exc}")
 
     if status == 204 and body_len == 0:
         return CaptivePortalSlice(checked=True, portal_detected=False, note="")
-    # Anything else for a generate_204 endpoint — a redirect (3xx), or a 200 with
-    # a body — means something answered in the portal's place.
+    if 200 <= status < 400:
+        # A redirect (3xx → sign-in page) or a non-empty/non-204 2xx (a splash
+        # page where an empty 204 was expected): something answered in the
+        # portal's place.
+        return CaptivePortalSlice(
+            checked=True, portal_detected=True,
+            note=f"connectivity check returned HTTP {status} ({body_len} body bytes), expected empty 204",
+        )
+    # 4xx/5xx — the check endpoint itself errored or is rate-limiting. Not a
+    # portal; do not accuse one off a flaky endpoint.
     return CaptivePortalSlice(
-        checked=True, portal_detected=True,
-        note=f"connectivity check returned HTTP {status} ({body_len} body bytes), expected empty 204",
+        checked=False, portal_detected=False,
+        note=f"connectivity check endpoint returned HTTP {status}; inconclusive",
     )

@@ -165,7 +165,9 @@ def _parse_route_linux(stdout: str) -> str | None:
 # default` prints a "gateway: <ip>" line instead of "default via <ip>".
 
 _MAC_PING_STATS_RE = re.compile(
-    r"(\d+) packets transmitted, (\d+) packets received, ([\d.]+)% packet loss"
+    # BSD ping inserts ", +N errors" before the loss% when it gets ICMP errors
+    # (host/net unreachable) rather than plain timeouts; tolerate it optionally.
+    r"(\d+) packets transmitted, (\d+) packets received,(?: \+\d+ errors,)? ([\d.]+)% packet loss"
 )
 _MAC_PING_RTT_RE = re.compile(
     r"round-trip min/avg/max/stddev = [\d.]+/([\d.]+)/[\d.]+/[\d.]+ ms"

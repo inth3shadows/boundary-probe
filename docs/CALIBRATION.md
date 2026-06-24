@@ -55,13 +55,16 @@ injected-only fixtures.
 
 **Sweep the path-loss threshold.** The `isp-loss` scenario defaults to 50% loss,
 which sits far above the 20% `path_loss_pct` threshold and so never tests it.
-Override the loss to land in the ambiguous band (10–30%) that the measurement
-pass flags, and name each capture distinctly so they don't overwrite:
+Override the loss (an integer 1–100) to land in the ambiguous band (10–30%) the
+measurement pass flags. Each run writes the **same** `tests/fixtures/isp-loss.json`
+(the scenario name must stay `isp-loss` — it keys the ground-truth map), so
+**rename after each capture** to keep several:
 
 ```
-sudo BP_ISP_LOSS_PCT=15 scripts/inject_fault.sh capture isp-loss   # then rename -> isp-loss-15.json
-sudo BP_ISP_LOSS_PCT=22 scripts/inject_fault.sh capture isp-loss   #             -> isp-loss-22.json
-sudo BP_ISP_LOSS_PCT=25 scripts/inject_fault.sh capture isp-loss   #             -> isp-loss-25.json
+sudo BP_ISP_LOSS_PCT=15 scripts/inject_fault.sh capture isp-loss
+mv tests/fixtures/isp-loss.json tests/fixtures/isp-loss-15.json
+sudo BP_ISP_LOSS_PCT=22 scripts/inject_fault.sh capture isp-loss
+mv tests/fixtures/isp-loss.json tests/fixtures/isp-loss-22.json
 ```
 
 A 22% capture is exactly the case `calibrate.py`'s measurement pass calls

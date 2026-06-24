@@ -7,6 +7,7 @@ is the high-value fix: a detected portal must override the otherwise-green
 """
 from __future__ import annotations
 
+import http.client
 import socket
 import urllib.error
 
@@ -45,13 +46,27 @@ def test_204_with_unexpected_body_is_a_portal():
     assert s.checked and s.portal_detected is True
 
 
+@pytest.mark.parametrize("status", [403, 429, 500, 503])
+def test_4xx_5xx_endpoint_error_is_not_a_portal(status):
+    # The check endpoint itself erroring/rate-limiting must NOT be read as a
+    # portal — that was the false-positive bug (a flaky gstatic 500 -> "captive
+    # portal"). Inconclusive, not intercepted.
+    s = collect_captive_portal(URL, 4.0, fetch_fn=lambda u, t: (status, 0))
+    assert s.checked is False and s.portal_detected is False
+    assert str(status) in s.note
+
+
 @pytest.mark.parametrize("exc", [
     urllib.error.URLError("conn refused"),
     socket.timeout("timed out"),
     OSError("network unreachable"),
+    http.client.BadStatusLine("garbage"),   # malformed HTTP — NOT an OSError
+    http.client.IncompleteRead(b"partial"),
 ])
 def test_request_error_is_not_a_portal(exc):
-    # No response at all could just be a dead link — must NOT accuse a portal.
+    # No usable response (dead link, timeout, or malformed HTTP) must NOT accuse
+    # a portal — and must not raise (fail-open). HTTPException is not an OSError,
+    # so it was previously uncaught and crashed the whole run.
     def _raise(u, t):
         raise exc
     s = collect_captive_portal(URL, 4.0, fetch_fn=_raise)

@@ -55,6 +55,20 @@ def test_mac_ping_empty_input():
     assert stats.sent == 0 and stats.received == 0 and stats.loss_pct == 100.0
 
 
+def test_mac_ping_with_icmp_errors():
+    # BSD ping inserts ", +N errors" before the loss% on ICMP error replies
+    # (host/net unreachable) — the stats line must still parse, not fall to the
+    # 100%-loss / sent=0 default.
+    out = (
+        "PING 10.0.0.9 (10.0.0.9): 56 data bytes\n"
+        "36 bytes from 10.0.0.1: Destination Host Unreachable\n"
+        "\n--- 10.0.0.9 ping statistics ---\n"
+        "4 packets transmitted, 0 packets received, +4 errors, 100.0% packet loss\n"
+    )
+    stats = _parse_ping_mac(out)
+    assert stats.sent == 4 and stats.received == 0 and stats.loss_pct == 100.0
+
+
 # --- _parse_route_mac -----------------------------------------------------
 
 def test_mac_route_finds_gateway():

@@ -6,6 +6,7 @@ from boundary_probe.collectors.control_hosts import collect_control_hosts
 from boundary_probe.collectors.dns import collect_dns
 from boundary_probe.collectors.gateway import collect_gateway
 from boundary_probe.collectors.ip_connectivity import collect_ip_connectivity
+from boundary_probe.collectors.target_service import collect_target_service
 from boundary_probe.targets import parse_target
 
 
@@ -36,3 +37,12 @@ def test_real_ip_connectivity():
     result = collect_ip_connectivity()
     assert isinstance(result.ok, bool)
     assert 0.0 <= result.loss_pct <= 100.0
+
+
+@pytest.mark.integration
+def test_real_l7_target_check():
+    # Real https GET through the default fetch path — a stable, verified-cert host.
+    result = collect_target_service(parse_target("https://one.one.one.one"))
+    assert result.method == "http"
+    assert result.ok is True
+    assert result.http_status is not None and result.http_status < 500

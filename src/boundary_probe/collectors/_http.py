@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import http.client
 import socket
+import ssl
 import urllib.error
 import urllib.request
 
@@ -36,6 +37,19 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def no_redirect_opener() -> urllib.request.OpenerDirector:
-    """An opener that raises HTTPError on 3xx instead of following it."""
-    return urllib.request.build_opener(_NoRedirect())
+def no_redirect_opener(*, verify_tls: bool = True) -> urllib.request.OpenerDirector:
+    """An opener that raises HTTPError on 3xx instead of following it.
+
+    ``verify_tls=False`` disables certificate verification on the HTTPS handler —
+    used only by the L7 target check against an operator-specified internal target
+    (config ``target_tls_verify=false``, e.g. a homelab self-signed cert). The
+    default verifies, so an expired/invalid public cert surfaces as a URLError.
+    The captive-portal and vantage callers never pass this — they keep the default.
+    """
+    handlers: list[urllib.request.BaseHandler] = [_NoRedirect()]
+    if not verify_tls:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        handlers.append(urllib.request.HTTPSHandler(context=ctx))
+    return urllib.request.build_opener(*handlers)

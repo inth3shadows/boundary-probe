@@ -82,6 +82,35 @@ def test_toml_overrides_threshold(monkeypatch, tmp_path):
     assert cfg.control_loss_pct == _DEFAULTS.control_loss_pct
 
 
+def test_target_tls_verify_default_true(monkeypatch, tmp_path):
+    monkeypatch.setenv("BOUNDARY_PROBE_CONFIG", str(tmp_path / "nope.toml"))
+    assert load_config().target_tls_verify is True
+
+
+def test_target_tls_verify_toml_override(monkeypatch, tmp_path):
+    _write_config(tmp_path, "[probes]\ntarget_tls_verify = false\n")
+    monkeypatch.setenv("BOUNDARY_PROBE_CONFIG", str(tmp_path / "config.toml"))
+    assert load_config().target_tls_verify is False
+
+
+def test_target_tls_verify_stringly_typed_is_rejected(monkeypatch, tmp_path):
+    # bool("false") is True — a stringly-typed value must be rejected loudly, not
+    # silently coerced to verification ON when the user meant to disable it.
+    _write_config(tmp_path, '[probes]\ntarget_tls_verify = "false"\n')
+    monkeypatch.setenv("BOUNDARY_PROBE_CONFIG", str(tmp_path / "config.toml"))
+    with pytest.raises(SystemExit):
+        load_config()
+
+
+def test_target_http_timeout_override_and_validation(monkeypatch, tmp_path):
+    _write_config(tmp_path, "[timeouts]\ntarget_http_s = 9.0\n")
+    monkeypatch.setenv("BOUNDARY_PROBE_CONFIG", str(tmp_path / "config.toml"))
+    assert load_config().target_http_s == 9.0
+    _write_config(tmp_path, "[timeouts]\ntarget_http_s = 0\n")
+    with pytest.raises(SystemExit):
+        load_config()
+
+
 def test_vantage_disabled_by_default(monkeypatch, tmp_path):
     monkeypatch.setenv("BOUNDARY_PROBE_CONFIG", str(tmp_path / "nope.toml"))
     cfg = load_config()

@@ -10,7 +10,7 @@ CLI (cli.py)
        ├─ collect_dns()           # socket.getaddrinfo
        ├─ collect_ip_connectivity() # canary ping to 1.1.1.1
        ├─ collect_control_hosts() # parallel ping: 1.1.1.1, 8.8.8.8, 8.8.4.4, cloudflare.com
-       ├─ collect_target_service() # TCP connect or ping
+       ├─ collect_target_service() # HTTP status (http/https) · TCP connect (port) · ping
        └─ collect_path()          # tracert → normalize_from_paths()
   └─ diagnose(snapshot)      # deterministic rule engine
   └─ insert_run()            # SQLite persistence
@@ -35,7 +35,7 @@ The rule engine never sees raw subprocess output. Collectors reduce observations
 | `collectors/dns.py` | `socket.getaddrinfo` — no subprocess; IP targets bypass resolution | socket |
 | `collectors/ip_connectivity.py` | Canary ping to 1.1.1.1 (10 packets) | _runner, _parsers |
 | `collectors/control_hosts.py` | 4-host parallel ping via `ThreadPoolExecutor`; ≥3/4 quorum | _runner, _parsers |
-| `collectors/target_service.py` | TCP connect (if port known) or ping fallback | _runner, _parsers, socket |
+| `collectors/target_service.py` | L7 HTTP-status check (http/https), TCP connect (explicit port), or ping fallback | _http, _runner, _parsers, socket |
 | `collectors/path.py` | `tracert -4 -h 10 -w 500`; 30s ceiling | _runner, _parsers |
 | `collectors/orchestrator.py` | Sequential collection → secondary trace if degradation detected → `SignalSnapshot` | all collectors, normalizer |
 | `store/__init__.py` | SQLite schema, `connect()`, `insert_run()`, `fetch_recent()`, `confidence_band()` | sqlite3, models |

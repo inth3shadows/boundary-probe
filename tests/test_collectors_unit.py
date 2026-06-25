@@ -355,16 +355,21 @@ def test_path_isp_loss():
 # ---------------------------------------------------------------------------
 
 
-def test_target_service_https_uses_port_443():
-    from unittest.mock import MagicMock, patch
+def _l7(status_or_exc):
+    """An injected http_fetch_fn that returns a status or raises a transport error."""
+    def _fn(url, timeout_s, verify_tls):
+        if isinstance(status_or_exc, BaseException):
+            raise status_or_exc
+        return status_or_exc
+    return _fn
+
+
+def test_target_service_https_uses_l7_check():
     target = parse_target("https://example.com")
-    mock_sock = MagicMock()
-    mock_sock.__enter__ = MagicMock(return_value=mock_sock)
-    mock_sock.__exit__ = MagicMock(return_value=False)
-    with patch("socket.create_connection", return_value=mock_sock):
-        result = collect_target_service(target)
+    result = collect_target_service(target, http_fetch_fn=_l7(200))
     assert result.ok is True
-    assert result.method == "tcp-connect"
+    assert result.method == "http"
+    assert result.http_status == 200
     assert result.target_port == 443
 
 
@@ -394,12 +399,78 @@ def test_target_service_tcp_connect_uses_configured_timeout():
 
 def test_target_service_tcp_connect_refused():
     from unittest.mock import patch
-    target = parse_target("https://example.com")
+    target = parse_target("192.168.1.1:8080")  # explicit non-web port → TCP path
     with patch("socket.create_connection", side_effect=OSError("Connection refused")):
         result = collect_target_service(target)
     assert result.ok is False
     assert "Connection refused" in result.note
     assert result.method == "tcp-connect"
+
+
+# ---------------------------------------------------------------------------
+# collect_target_service (L7 HTTP-status path)
+# ---------------------------------------------------------------------------
+
+
+def test_target_service_l7_2xx_up():
+    result = collect_target_service(parse_target("http://example.com"), http_fetch_fn=_l7(200))
+    assert result.ok is True and result.http_status == 200 and result.method == "http"
+    assert result.note == ""
+
+
+def test_target_service_l7_3xx_up():
+    # A redirect means the origin is responding — up.
+    result = collect_target_service(parse_target("https://example.com"), http_fetch_fn=_l7(301))
+    assert result.ok is True and result.http_status == 301
+
+
+def test_target_service_l7_4xx_up():
+    # 4xx = origin responding (wrong path/auth) — not a network boundary, so up.
+    result = collect_target_service(parse_target("https://example.com/missing"), http_fetch_fn=_l7(404))
+    assert result.ok is True
+    assert result.http_status == 404
+    assert "HTTP 404" in result.note
+
+
+def test_target_service_l7_5xx_down():
+    # 503 = origin failing — the headline case TCP-connect missed.
+    result = collect_target_service(parse_target("https://example.com"), http_fetch_fn=_l7(503))
+    assert result.ok is False
+    assert result.http_status == 503
+    assert "HTTP 503" in result.note
+
+
+def test_target_service_l7_tls_or_transport_failure_down():
+    import urllib.error
+    target = parse_target("https://expired.example.com")
+    result = collect_target_service(target, http_fetch_fn=_l7(urllib.error.URLError("certificate verify failed")))
+    assert result.ok is False
+    assert result.http_status is None
+    assert "request failed" in result.note
+
+
+def test_target_service_l7_passes_tls_verify_flag_from_cfg():
+    from boundary_probe.config import ProbeConfig
+    seen = {}
+    def _fn(url, timeout_s, verify_tls):
+        seen["verify_tls"] = verify_tls
+        seen["url"] = url
+        return 200
+    collect_target_service(parse_target("https://internal.box:8443"),
+                           cfg=ProbeConfig(target_tls_verify=False), http_fetch_fn=_fn)
+    assert seen["verify_tls"] is False
+    assert seen["url"] == "https://internal.box:8443/"  # explicit non-default port preserved
+
+
+def test_target_service_l7_preserves_url_path_and_query():
+    """Probe the path the user gave, not the bare root — else a 200 at '/' masks
+    a 503 at the real endpoint (the false-up this whole check exists to kill)."""
+    seen = {}
+    def _fn(url, timeout_s, verify_tls):
+        seen["url"] = url
+        return 200
+    collect_target_service(parse_target("https://api.example.com/v2/health?deep=1"), http_fetch_fn=_fn)
+    assert seen["url"] == "https://api.example.com/v2/health?deep=1"
 
 
 def test_target_service_ping_respects_loss_threshold():

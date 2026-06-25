@@ -42,11 +42,11 @@ def collect_signals(
     t0 = time.monotonic()
     cfg = load_config()
 
-    gateway = collect_gateway(r)
+    gateway = collect_gateway(r, cfg=cfg)
     dns = collect_dns(parsed_target.host)
-    ip = collect_ip_connectivity(r)
-    controls = collect_control_hosts(r)
-    target = collect_target_service(parsed_target, r)
+    ip = collect_ip_connectivity(r, cfg=cfg)
+    controls = collect_control_hosts(r, cfg=cfg)
+    target = collect_target_service(parsed_target, r, cfg=cfg)
 
     if skip_captive or not cfg.captive_check_url:
         captive = collect_captive_portal(check_url="")  # disabled -> checked=False
@@ -60,11 +60,11 @@ def collect_signals(
                                  note="skipped via --no-path")
         path_secondary = None
     else:
-        path_primary = collect_path(parsed_target.host, r)
+        path_primary = collect_path(parsed_target.host, r, cfg=cfg)
         needs_secondary = not ip.ok or not controls.all_ok
-        path_secondary = collect_path(secondary_target, r) if needs_secondary else None
+        path_secondary = collect_path(secondary_target, r, cfg=cfg) if needs_secondary else None
 
-    path_signals = normalize_from_paths(path_primary, path_secondary)
+    path_signals = normalize_from_paths(path_primary, path_secondary, cfg=cfg)
 
     snapshot = SignalSnapshot(
         gateway_reachable=gateway.reachable,

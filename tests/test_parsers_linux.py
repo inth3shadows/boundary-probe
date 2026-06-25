@@ -58,6 +58,46 @@ def test_linux_ping_empty_input():
     assert stats.received == 0
     assert stats.loss_pct == 100.0
     assert stats.avg_ms is None
+    # An unparseable statistics block must be flagged, not silently asserted as
+    # a real measurement — callers say "could not parse" rather than "100% loss".
+    assert stats.parsed is False
+
+
+def test_linux_ping_valid_sets_parsed_true():
+    stats = _parse_ping_linux(_read("ping_success.txt"))
+    assert stats.parsed is True
+
+
+def test_linux_ping_total_loss_with_icmp_errors():
+    """iputils emits ', +N errors' before the loss% on ICMP errors (host/net
+    unreachable). The summary must still parse — not collapse to the 100%-loss
+    fallback, which would only coincidentally match here and fabricate sent=0."""
+    out = (
+        "PING 192.0.2.1 (192.0.2.1) 56(84) bytes of data.\n\n"
+        "--- 192.0.2.1 ping statistics ---\n"
+        "3 packets transmitted, 0 received, +3 errors, 100% packet loss, time 2002ms\n"
+    )
+    stats = _parse_ping_linux(out)
+    assert stats.parsed is True
+    assert stats.sent == 3
+    assert stats.received == 0
+    assert stats.loss_pct == 100.0
+
+
+def test_linux_ping_partial_loss_with_icmp_errors():
+    """The real regression: partial loss + errors. Pre-fix this missed entirely
+    and read as sent=0 / 100% loss — a basically-healthy host marked a fault."""
+    out = (
+        "--- 10.0.0.9 ping statistics ---\n"
+        "5 packets transmitted, 2 received, +3 errors, 60% packet loss, time 4005ms\n"
+        "rtt min/avg/max/mdev = 0.5/1.0/1.5/0.2 ms\n"
+    )
+    stats = _parse_ping_linux(out)
+    assert stats.parsed is True
+    assert stats.sent == 5
+    assert stats.received == 2
+    assert stats.loss_pct == 60.0
+    assert stats.avg_ms == pytest.approx(1.0)
 
 
 # ---------------------------------------------------------------------------

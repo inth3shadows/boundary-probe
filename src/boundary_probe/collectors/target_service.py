@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from boundary_probe.collectors._commands import ping_cmd
 from boundary_probe.collectors._parsers import parse_ping_output
 from boundary_probe.collectors._runner import DefaultRunner, SubprocessRunner
-from boundary_probe.config import load_config
+from boundary_probe.config import ProbeConfig, load_config
 from boundary_probe.targets import ParsedTarget
 
 _SCHEME_PORTS = {"http": 80, "https": 443}
@@ -27,6 +27,7 @@ def collect_target_service(
     parsed_target: ParsedTarget,
     runner: SubprocessRunner | None = None,
     *,
+    cfg: ProbeConfig | None = None,
     loss_pct_threshold: float | None = None,
     timeout_s: float | None = None,
     tcp_timeout_s: float | None = None,
@@ -36,7 +37,7 @@ def collect_target_service(
     if port is None and parsed_target.scheme in _SCHEME_PORTS:
         port = _SCHEME_PORTS[parsed_target.scheme]
 
-    cfg = load_config()
+    cfg = cfg if cfg is not None else load_config()
     if port is not None:
         _tcp = tcp_timeout_s if tcp_timeout_s is not None else cfg.target_tcp_s
         return _tcp_connect(parsed_target.host, port, _tcp)
@@ -70,6 +71,12 @@ def _ping_host(host: str, runner: SubprocessRunner, loss_pct_threshold: float, t
                                   note=f"ping timed out after {timeout_s:.0f}s")
 
     stats = parse_ping_output(result.stdout)
+    if not stats.parsed:
+        # Don't assert a fabricated loss % off output we couldn't read; say so.
+        return TargetServiceSlice(ok=False, method="ping", target_host=host,
+                                  target_port=None, elapsed_ms=elapsed_ms,
+                                  note=f"unrecognized output format from ping to {host}")
+    # sent > 0 rejects a degenerate "0 transmitted … 0% loss" summary reading as up.
     ok = stats.sent > 0 and stats.loss_pct < loss_pct_threshold
     return TargetServiceSlice(
         ok=ok,

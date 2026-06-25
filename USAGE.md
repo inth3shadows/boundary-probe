@@ -172,6 +172,10 @@ secondary_target = "8.8.8.8"
 # How many of control_hosts must be healthy to call the internet controls OK.
 # Must be >= 1 and <= the number of control_hosts.
 control_quorum = 3
+# For an http/https target, verify the TLS certificate so an expired/invalid
+# cert reads as the service being DOWN. Set false only for an internal target
+# with a self-signed cert (e.g. a homelab service).
+target_tls_verify = true
 
 [thresholds]
 # Per-hop loss % above which a traceroute hop counts as lossy (0–100).
@@ -189,8 +193,9 @@ gateway_route_s = 5.0      # default-route lookup
 gateway_ping_s = 8.0       # gateway ping
 ip_connectivity_s = 15.0   # canary IP ping
 control_hosts_s = 10.0     # control-host probes
-target_ping_s = 8.0        # target ping
-target_tcp_s = 5.0         # target TCP connect (when a port is known)
+target_ping_s = 8.0        # target ping (bare hostname)
+target_tcp_s = 5.0         # target TCP connect (explicit non-web port)
+target_http_s = 5.0        # target HTTP GET (http/https URL — L7 status check)
 tracert_s = 60.0           # traceroute ceiling
 
 [vantage]

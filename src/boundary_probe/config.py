@@ -14,6 +14,10 @@ class ProbeConfig:
     canary_ip: str = "1.1.1.1"
     secondary_target: str = "8.8.8.8"
     control_quorum: int = 3
+    # L7 target check: verify TLS certs on https targets (so an expired/invalid
+    # cert reads as the service being down). Set false for internal self-signed
+    # targets (homelab). Only affects the https target probe, never the vantage.
+    target_tls_verify: bool = True
 
     # [thresholds]
     path_loss_pct: float = 20.0
@@ -28,6 +32,7 @@ class ProbeConfig:
     control_hosts_s: float = 10.0
     target_ping_s: float = 8.0
     target_tcp_s: float = 5.0
+    target_http_s: float = 5.0
     tracert_s: float = 60.0
 
     # [vantage] — opt-in external reachability check. Unset = feature off; the
@@ -66,6 +71,7 @@ def _validate(cfg: ProbeConfig) -> None:
         ("control_hosts_s", cfg.control_hosts_s),
         ("target_ping_s", cfg.target_ping_s),
         ("target_tcp_s", cfg.target_tcp_s),
+        ("target_http_s", cfg.target_http_s),
         ("tracert_s", cfg.tracert_s),
         ("vantage_timeout_s", cfg.vantage_timeout_s),
         ("captive_check_s", cfg.captive_check_s),
@@ -152,12 +158,24 @@ def load_config() -> ProbeConfig:
         )
         sys.exit(1)
 
+    # bool() never raises, so unlike the float/int fields a stringly-typed value
+    # ("false") would silently coerce to True. Reject a non-bool loudly instead.
+    raw_tls = probes.get("target_tls_verify", _DEFAULTS.target_tls_verify)
+    if not isinstance(raw_tls, bool):
+        print(
+            "error: config: target_tls_verify must be true or false "
+            f"(got {type(raw_tls).__name__})",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     try:
         cfg = ProbeConfig(
             control_hosts=control_hosts,
             canary_ip=str(probes.get("canary_ip", _DEFAULTS.canary_ip)),
             secondary_target=str(probes.get("secondary_target", _DEFAULTS.secondary_target)),
             control_quorum=int(probes.get("control_quorum", _DEFAULTS.control_quorum)),
+            target_tls_verify=raw_tls,
             path_loss_pct=float(thresholds.get("path_loss_pct", _DEFAULTS.path_loss_pct)),
             control_loss_pct=float(thresholds.get("control_loss_pct", _DEFAULTS.control_loss_pct)),
             ip_loss_pct=float(thresholds.get("ip_loss_pct", _DEFAULTS.ip_loss_pct)),
@@ -168,6 +186,7 @@ def load_config() -> ProbeConfig:
             control_hosts_s=float(timeouts.get("control_hosts_s", _DEFAULTS.control_hosts_s)),
             target_ping_s=float(timeouts.get("target_ping_s", _DEFAULTS.target_ping_s)),
             target_tcp_s=float(timeouts.get("target_tcp_s", _DEFAULTS.target_tcp_s)),
+            target_http_s=float(timeouts.get("target_http_s", _DEFAULTS.target_http_s)),
             tracert_s=float(timeouts.get("tracert_s", _DEFAULTS.tracert_s)),
             vantage_url=vantage_url,
             vantage_timeout_s=float(vantage.get("timeout_s", _DEFAULTS.vantage_timeout_s)),

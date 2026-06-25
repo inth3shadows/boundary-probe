@@ -146,6 +146,7 @@ def _print_config() -> None:
     print(f"  canary_ip        {cfg.canary_ip}")
     print(f"  secondary_target {cfg.secondary_target}")
     print(f"  control_quorum   {cfg.control_quorum}")
+    print(f"  target_tls_verify {cfg.target_tls_verify}")
     print()
     print("[thresholds]")
     print(f"  path_loss_pct      {cfg.path_loss_pct}%")
@@ -160,6 +161,7 @@ def _print_config() -> None:
     print(f"  control_hosts     {cfg.control_hosts_s}s")
     print(f"  target_ping       {cfg.target_ping_s}s")
     print(f"  target_tcp        {cfg.target_tcp_s}s")
+    print(f"  target_http       {cfg.target_http_s}s")
     print(f"  tracert           {cfg.tracert_s}s")
     print()
     print("[vantage]")
@@ -208,7 +210,9 @@ def _format_collector_details(result: CollectionResult) -> str:
     lines.append(f"  Captive:  {cap_str}")
 
     tgt = result.target
-    lines.append(f"  Target:   {tgt.method} ({tgt.elapsed_ms}ms)")
+    status = f" HTTP {tgt.http_status}" if tgt.http_status is not None else ""
+    verdict = "" if tgt.ok else " — FAILED"
+    lines.append(f"  Target:   {tgt.method}{status}{verdict} ({tgt.elapsed_ms}ms)")
 
     pp = result.path_primary
     if pp.completed:
@@ -235,6 +239,7 @@ def _collector_facts_dict(result: CollectionResult) -> dict:
         "controls_ok": result.controls.ok_count,
         "controls_total": result.controls.total,
         "target_method": result.target.method,
+        "target_http_status": result.target.http_status,
         "target_elapsed_ms": result.target.elapsed_ms,
         "path_hop_count": len(pp.raw_hops) if pp.completed else None,
         "path_completed": pp.completed,

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from boundary_probe.collectors._commands import ping_cmd
 from boundary_probe.collectors._parsers import parse_ping_output
 from boundary_probe.collectors._runner import DefaultRunner, SubprocessRunner
-from boundary_probe.config import load_config
+from boundary_probe.config import ProbeConfig, load_config
 
 
 @dataclass(slots=True, frozen=True)
@@ -36,6 +36,9 @@ def _probe_one(
     if result.timed_out:
         return ControlHostResult(host=host, reachable=False, loss_pct=100.0, avg_rtt_ms=None)
     stats = parse_ping_output(result.stdout)
+    # sent > 0 guards both a parse-miss (sent=0, parsed=False) and the degenerate
+    # "0 packets transmitted … 0% loss" line (parsed=True, sent=0) — neither is
+    # evidence of reachability, so a 0% loss off zero probes must not count.
     reachable = stats.sent > 0 and stats.loss_pct < loss_pct_threshold
     return ControlHostResult(host=host, reachable=reachable, loss_pct=stats.loss_pct, avg_rtt_ms=stats.avg_ms)
 
@@ -43,13 +46,14 @@ def _probe_one(
 def collect_control_hosts(
     runner: SubprocessRunner | None = None,
     *,
+    cfg: ProbeConfig | None = None,
     hosts: tuple[str, ...] | None = None,
     quorum: int | None = None,
     loss_pct_threshold: float | None = None,
     timeout_s: float | None = None,
 ) -> ControlHostsSlice:
     """Ping all control hosts in parallel. all_ok = ≥quorum reachable."""
-    cfg = load_config()
+    cfg = cfg if cfg is not None else load_config()
     r = runner or DefaultRunner()
     _hosts = hosts if hosts is not None else cfg.control_hosts
     _quorum = quorum if quorum is not None else cfg.control_quorum

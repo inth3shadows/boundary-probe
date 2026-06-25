@@ -8,7 +8,7 @@ from boundary_probe.collectors._parsers import (
     parse_route_print_default_gateway,
 )
 from boundary_probe.collectors._runner import DefaultRunner, SubprocessRunner
-from boundary_probe.config import load_config
+from boundary_probe.config import ProbeConfig, load_config
 
 
 @dataclass(slots=True, frozen=True)
@@ -22,12 +22,13 @@ class GatewaySlice:
 def collect_gateway(
     runner: SubprocessRunner | None = None,
     *,
+    cfg: ProbeConfig | None = None,
     route_timeout_s: float | None = None,
     ping_timeout_s: float | None = None,
     min_replies: int | None = None,
 ) -> GatewaySlice:
     """Discover the default IPv4 gateway via `route print -4`, then ping it 4 times."""
-    cfg = load_config()
+    cfg = cfg if cfg is not None else load_config()
     r = runner or DefaultRunner()
     _route_t = route_timeout_s if route_timeout_s is not None else cfg.gateway_route_s
     _ping_t = ping_timeout_s if ping_timeout_s is not None else cfg.gateway_ping_s
@@ -49,7 +50,7 @@ def collect_gateway(
                             note=f"ping to {gateway_ip} timed out after {_ping_t:.0f}s")
 
     stats = parse_ping_output(ping_result.stdout)
-    if stats.sent == 0:
+    if not stats.parsed:
         return GatewaySlice(reachable=False, gateway_ip=gateway_ip, rtt_ms=None,
                             note="unrecognized output format from ping")
 

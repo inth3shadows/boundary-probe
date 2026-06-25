@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from boundary_probe.collectors._commands import traceroute_cmd
 from boundary_probe.collectors._parsers import parse_tracert_output
 from boundary_probe.collectors._runner import DefaultRunner, SubprocessRunner
-from boundary_probe.config import load_config
+from boundary_probe.config import ProbeConfig, load_config
 
 
 @dataclass(slots=True, frozen=True)
@@ -20,10 +20,11 @@ def collect_path(
     target_host: str,
     runner: SubprocessRunner | None = None,
     *,
+    cfg: ProbeConfig | None = None,
     timeout_s: float | None = None,
 ) -> PathSlice:
     """Run `tracert -4 -h 10 -w 500 <target>` and parse the hop table."""
-    cfg = load_config()
+    cfg = cfg if cfg is not None else load_config()
     r = runner or DefaultRunner()
     _timeout = timeout_s if timeout_s is not None else cfg.tracert_s
 

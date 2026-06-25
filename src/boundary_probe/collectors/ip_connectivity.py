@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from boundary_probe.collectors._commands import ping_cmd
 from boundary_probe.collectors._parsers import parse_ping_output
 from boundary_probe.collectors._runner import DefaultRunner, SubprocessRunner
-from boundary_probe.config import load_config
+from boundary_probe.config import ProbeConfig, load_config
 
 
 @dataclass(slots=True, frozen=True)
@@ -20,12 +20,13 @@ class IpConnectivitySlice:
 def collect_ip_connectivity(
     runner: SubprocessRunner | None = None,
     *,
+    cfg: ProbeConfig | None = None,
     canary_ip: str | None = None,
     loss_pct_threshold: float | None = None,
     timeout_s: float | None = None,
 ) -> IpConnectivitySlice:
     """Ping a canary IP directly to confirm raw IP path works independent of DNS."""
-    cfg = load_config()
+    cfg = cfg if cfg is not None else load_config()
     r = runner or DefaultRunner()
     _canary = canary_ip if canary_ip is not None else cfg.canary_ip
     _loss_pct = loss_pct_threshold if loss_pct_threshold is not None else cfg.ip_loss_pct
@@ -38,11 +39,13 @@ def collect_ip_connectivity(
                                    avg_rtt_ms=None, note=f"ping timed out after {_timeout:.0f}s")
 
     stats = parse_ping_output(result.stdout)
-    if stats.sent == 0:
+    if not stats.parsed:
         return IpConnectivitySlice(ok=False, target_ip=_canary, loss_pct=100.0,
                                    avg_rtt_ms=None, note="unrecognized output format from ping")
 
-    ok = stats.loss_pct < _loss_pct
+    # sent > 0 rejects the degenerate "0 transmitted … 0% loss" line, which would
+    # otherwise read as healthy connectivity off zero actual probes.
+    ok = stats.sent > 0 and stats.loss_pct < _loss_pct
     return IpConnectivitySlice(
         ok=ok,
         target_ip=_canary,

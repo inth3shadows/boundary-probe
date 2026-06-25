@@ -21,6 +21,7 @@ from boundary_probe.config import load_config
 
 if TYPE_CHECKING:
     from boundary_probe.collectors.path import PathSlice
+    from boundary_probe.config import ProbeConfig
 
 _LOSS_THRESHOLD_PCT = 20.0  # fallback used only when config is unavailable
 
@@ -114,10 +115,14 @@ def _has_persistent_loss(hops: list[dict], threshold: float = _LOSS_THRESHOLD_PC
 def normalize_from_paths(
     primary: "PathSlice",
     secondary: "PathSlice | None",
+    *,
+    cfg: "ProbeConfig | None" = None,
 ) -> PathSignals:
     """Adapter called by orchestrator. Incomplete primary trace returns no signal."""
     if not primary.completed:
         return PathSignals(packet_loss_after_hop1=False, packet_loss_multiple_targets=False)
 
     secondary_hops = secondary.raw_hops if secondary is not None else None
-    return normalize_path_signals(primary.raw_hops, secondary_hops)
+    # Reuse the orchestrator's already-loaded config when provided, else load.
+    threshold = cfg.path_loss_pct if cfg is not None else load_config().path_loss_pct
+    return normalize_path_signals(primary.raw_hops, secondary_hops, path_loss_pct=threshold)

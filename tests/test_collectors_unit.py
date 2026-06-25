@@ -226,6 +226,16 @@ def test_ip_connectivity_partial_loss_above_threshold():
     assert result.ok is True   # ~25-30% loss < 50% threshold
 
 
+def test_ip_connectivity_zero_transmitted_is_not_reachable():
+    """A parseable '0 packets transmitted … 0% loss' summary is 0% loss off ZERO
+    probes — must not read as healthy connectivity (regression: the parsed flag
+    must not replace the sent>0 guard in the reachability math)."""
+    degenerate = "0 packets transmitted, 0 received, 0% packet loss, time 0ms\n"
+    runner = FakeRunner({tuple(ping_cmd("1.1.1.1", 10, 1000)): _ok(degenerate)})
+    result = collect_ip_connectivity(runner)
+    assert result.ok is False
+
+
 # ---------------------------------------------------------------------------
 # collect_control_hosts
 # ---------------------------------------------------------------------------
@@ -292,6 +302,26 @@ def test_target_service_ping_timeout():
     result = collect_target_service(_host_target("example.com"), runner)
     assert result.ok is False
     assert "timed out" in result.note
+
+
+def test_target_service_ping_unparseable_does_not_fabricate_loss():
+    """Output we can't parse must read 'unrecognized output format', not a
+    fabricated '100% packet loss' (which would assert a measurement we lack)."""
+    runner = FakeRunner({tuple(ping_cmd("example.com", 4, 1000)): _ok("garbage that is not ping output")})
+    result = collect_target_service(_host_target("example.com"), runner)
+    assert result.ok is False
+    assert "unrecognized output format" in result.note
+    assert "packet loss" not in result.note
+
+
+def test_target_service_honors_explicitly_passed_cfg():
+    """A cfg passed in by the orchestrator overrides the on-disk config without a
+    re-read (the redundant-load fix). A high loss threshold lets lossy ping pass."""
+    from boundary_probe.config import ProbeConfig
+    runner = FakeRunner({tuple(ping_cmd("example.com", 4, 1000)): _ok(_PING_PARTIAL_LOSS)})
+    cfg = ProbeConfig(ip_loss_pct=99.0)
+    result = collect_target_service(_host_target("example.com"), runner, cfg=cfg)
+    assert result.ok is True  # partial loss < 99% threshold from the passed cfg
 
 
 # ---------------------------------------------------------------------------

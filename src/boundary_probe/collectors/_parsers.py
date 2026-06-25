@@ -19,6 +19,11 @@ class PingStats:
     min_ms: float | None
     avg_ms: float | None
     max_ms: float | None
+    # False when the statistics line could not be parsed at all. The fields then
+    # carry the fail-toward-fault fallback (sent=0, loss_pct=100.0) so callers
+    # still treat the host as unreachable, but `parsed=False` lets them say
+    # "could not parse ping output" instead of asserting a fabricated 100% loss.
+    parsed: bool = True
 
 
 # ---------------------------------------------------------------------------
@@ -53,7 +58,7 @@ def _parse_ping_win(stdout: str) -> PingStats:
     """Parse Windows ping stdout into PingStats. Returns 100% loss on missing statistics block."""
     pkts = _WIN_PACKETS_RE.search(stdout)
     if not pkts:
-        return PingStats(sent=0, received=0, loss_pct=100.0, min_ms=None, avg_ms=None, max_ms=None)
+        return PingStats(sent=0, received=0, loss_pct=100.0, min_ms=None, avg_ms=None, max_ms=None, parsed=False)
 
     sent, received = int(pkts.group(1)), int(pkts.group(2))
     lost = sent - received
@@ -105,8 +110,12 @@ def _parse_route_win(stdout: str) -> str | None:
 # Linux parsers
 # ---------------------------------------------------------------------------
 
+# iputils inserts ", +N errors" before the loss% when ICMP errors come back
+# (host/net unreachable) rather than plain timeouts; tolerate it optionally.
+# Without this, any errored ping misses entirely and falls through to the
+# 100%-loss fallback below — a fabricated total-loss fault. Mirrors _MAC_PING_STATS_RE.
 _LINUX_PING_STATS_RE = re.compile(
-    r"(\d+) packets transmitted, (\d+) received,\s+(\d+)% packet loss"
+    r"(\d+) packets transmitted, (\d+) received,(?: \+\d+ errors,)?\s+(\d+)% packet loss"
 )
 _LINUX_PING_RTT_RE = re.compile(
     r"rtt min/avg/max/mdev = [\d.]+/([\d.]+)/[\d.]+/[\d.]+ ms"
@@ -121,7 +130,7 @@ def _parse_ping_linux(stdout: str) -> PingStats:
     """Parse Linux ping stdout into PingStats."""
     m = _LINUX_PING_STATS_RE.search(stdout)
     if not m:
-        return PingStats(sent=0, received=0, loss_pct=100.0, min_ms=None, avg_ms=None, max_ms=None)
+        return PingStats(sent=0, received=0, loss_pct=100.0, min_ms=None, avg_ms=None, max_ms=None, parsed=False)
     sent, received = int(m.group(1)), int(m.group(2))
     loss_pct = float(m.group(3))
     rtt = _LINUX_PING_RTT_RE.search(stdout)
@@ -179,7 +188,7 @@ def _parse_ping_mac(stdout: str) -> PingStats:
     """Parse macOS (BSD) ping stdout into PingStats."""
     m = _MAC_PING_STATS_RE.search(stdout)
     if not m:
-        return PingStats(sent=0, received=0, loss_pct=100.0, min_ms=None, avg_ms=None, max_ms=None)
+        return PingStats(sent=0, received=0, loss_pct=100.0, min_ms=None, avg_ms=None, max_ms=None, parsed=False)
     sent, received = int(m.group(1)), int(m.group(2))
     loss_pct = float(m.group(3))
     rtt = _MAC_PING_RTT_RE.search(stdout)

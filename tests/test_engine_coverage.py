@@ -25,6 +25,7 @@ _BOOL_FIELDS = (
     "packet_loss_after_hop1",
     "packet_loss_multiple_targets",
     "captive_portal_detected",
+    "ipv6_default_route_present",
 )
 
 
@@ -76,8 +77,44 @@ def test_forwarding_gateway_is_never_blamed_locally() -> None:
     # Invariant pinning the ICMP-filtered-gateway false positive: if traffic
     # provably traversed the gateway (the canary or control hosts are reachable),
     # the gateway cannot be the accused boundary — regardless of whether it
-    # answered ICMP. Holds across all 2^8 signal combinations.
+    # answered ICMP. Holds across all combinations in _all_snapshots() (currently
+    # 2^len(_BOOL_FIELDS) — don't hardcode the exponent here, it drifts every
+    # time a field is added).
     for snap in _all_snapshots():
         if snap.ip_connectivity_ok or snap.control_hosts_ok:
             boundary = diagnose(snap).boundary
             assert boundary not in ("router-gateway", "local-device"), snap
+
+
+def test_no_v4_route_with_v6_route_present_is_ipv6_only_not_local_device() -> None:
+    # No IPv4 default route, but a v6 default route exists -> ipv6-only, not
+    # the flat "problem is local to this device" lie.
+    snap = SignalSnapshot(
+        gateway_reachable=False, dns_ok=False, ip_connectivity_ok=False,
+        control_hosts_ok=False, target_service_ok=False, default_route_present=False,
+        ipv6_default_route_present=True,
+    )
+    assert diagnose(snap).boundary == "ipv6-only"
+
+
+def test_dual_stack_host_unaffected_by_v6_route_presence() -> None:
+    # A normal dual-stack host (v4 works) must classify identically regardless
+    # of whether a v6 default route also exists — the new rule requires
+    # gateway_functional=False, so it never fires here.
+    for ipv6 in (False, True):
+        snap = SignalSnapshot(
+            gateway_reachable=True, dns_ok=True, ip_connectivity_ok=True,
+            control_hosts_ok=True, target_service_ok=True, default_route_present=True,
+            ipv6_default_route_present=ipv6,
+        )
+        assert diagnose(snap).boundary == "healthy"
+
+
+def test_no_v4_and_no_v6_route_still_classifies_as_local_device() -> None:
+    # True no-route host (neither v4 nor v6) -> local-device, unchanged.
+    snap = SignalSnapshot(
+        gateway_reachable=False, dns_ok=False, ip_connectivity_ok=False,
+        control_hosts_ok=False, target_service_ok=False, default_route_present=False,
+        ipv6_default_route_present=False,
+    )
+    assert diagnose(snap).boundary == "local-device"

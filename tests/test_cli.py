@@ -91,6 +91,7 @@ def test_diagnose_collector_details_in_text_output(monkeypatch, tmp_db, fake_col
     output = _run(["diagnose", "example.com"])
     assert "Collector details:" in output
     assert "Gateway:" in output
+    assert "IPv6:" in output
     assert "Controls:" in output
 
 
@@ -135,7 +136,7 @@ def test_build_capture_payload_includes_signals_and_measurements(fake_collection
         "gateway_reachable": True, "dns_ok": True, "ip_connectivity_ok": True,
         "control_hosts_ok": True, "target_service_ok": False, "default_route_present": True,
         "packet_loss_after_hop1": False, "packet_loss_multiple_targets": False,
-        "captive_portal_detected": False,
+        "captive_portal_detected": False, "ipv6_default_route_present": False,
     }
     # measurements preserve the raw per-collector data the booleans discard
     m = payload["measurements"]

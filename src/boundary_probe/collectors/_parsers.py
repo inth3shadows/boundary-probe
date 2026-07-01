@@ -106,6 +106,11 @@ def _parse_route_win(stdout: str) -> str | None:
     return None
 
 
+def _parse_ipv6_route_present_win(stdout: str) -> bool:
+    """Presence-only: does `route print -6` list a `::/0` default entry?"""
+    return any("::/0" in line for line in stdout.splitlines())
+
+
 # ---------------------------------------------------------------------------
 # Linux parsers
 # ---------------------------------------------------------------------------
@@ -164,6 +169,11 @@ def _parse_route_linux(stdout: str) -> str | None:
     return m.group(1) if m else None
 
 
+def _parse_ipv6_route_present_linux(stdout: str) -> bool:
+    """Presence-only: does `ip -6 route show default` print anything?"""
+    return bool(stdout.strip())
+
+
 # ---------------------------------------------------------------------------
 # macOS parsers
 # ---------------------------------------------------------------------------
@@ -206,6 +216,11 @@ def _parse_route_mac(stdout: str) -> str | None:
     return m.group(1) if m else None
 
 
+def _parse_ipv6_route_present_mac(stdout: str) -> bool:
+    """Presence-only: does `route -n get -inet6 default` print a `gateway:` line?"""
+    return "gateway:" in stdout
+
+
 # ---------------------------------------------------------------------------
 # Public API — dispatcher wrappers select the right implementation at runtime
 # ---------------------------------------------------------------------------
@@ -232,3 +247,12 @@ def parse_route_print_default_gateway(stdout: str) -> str | None:
     if _MAC:
         return _parse_route_mac(stdout)
     return _parse_route_linux(stdout)
+
+
+def parse_ipv6_default_route_present(stdout: str) -> bool:
+    """Presence-only IPv6 default route check — no address parsing."""
+    if _WIN:
+        return _parse_ipv6_route_present_win(stdout)
+    if _MAC:
+        return _parse_ipv6_route_present_mac(stdout)
+    return _parse_ipv6_route_present_linux(stdout)

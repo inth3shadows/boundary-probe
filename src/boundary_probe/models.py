@@ -21,6 +21,13 @@ class SignalSnapshot:
     # captive portal. Decisive: a portal makes every ICMP/DNS signal read green,
     # so without this the engine would call a hijacked network `healthy`.
     captive_portal_detected: bool = False
+    # True when an IPv6 default route exists (presence only, no v6 probing).
+    # Guards against the local-device rule confidently blaming this device when
+    # v4 has no default route but v6 does — the internet may be fine over v6,
+    # which this tool does not yet probe. Don't-care on any host with a working
+    # v4 default route (gateway_functional=True), so behavior is unchanged for
+    # normal dual-stack hosts.
+    ipv6_default_route_present: bool = False
 
     @property
     def gateway_functional(self) -> bool:

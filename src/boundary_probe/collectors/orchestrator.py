@@ -9,6 +9,7 @@ from boundary_probe.collectors.control_hosts import ControlHostsSlice, collect_c
 from boundary_probe.collectors.dns import DnsSlice, collect_dns
 from boundary_probe.collectors.gateway import GatewaySlice, collect_gateway
 from boundary_probe.collectors.ip_connectivity import IpConnectivitySlice, collect_ip_connectivity
+from boundary_probe.collectors.ipv6_route import Ipv6RouteSlice, collect_ipv6_route
 from boundary_probe.collectors.path import PathSlice, collect_path
 from boundary_probe.collectors.target_service import TargetServiceSlice, collect_target_service
 from boundary_probe.config import load_config
@@ -28,6 +29,7 @@ class CollectionResult:
     path_primary: PathSlice
     path_secondary: PathSlice | None
     captive: CaptivePortalSlice
+    ipv6_route: Ipv6RouteSlice
     elapsed_ms: int
 
 
@@ -43,6 +45,13 @@ def collect_signals(
     cfg = load_config()
 
     gateway = collect_gateway(r, cfg=cfg)
+    # ipv6_default_route_present is don't-care whenever a v4 default route
+    # exists (the ipv6-only engine rule requires default_route_present=False),
+    # so skip the extra subprocess + timeout on the common healthy-host path.
+    if gateway.gateway_ip is None:
+        ipv6_route = collect_ipv6_route(r, cfg=cfg)
+    else:
+        ipv6_route = Ipv6RouteSlice(present=False, note="skipped: IPv4 default route present")
     dns = collect_dns(parsed_target.host)
     ip = collect_ip_connectivity(r, cfg=cfg)
     controls = collect_control_hosts(r, cfg=cfg)
@@ -78,6 +87,7 @@ def collect_signals(
         packet_loss_after_hop1=path_signals.packet_loss_after_hop1,
         packet_loss_multiple_targets=path_signals.packet_loss_multiple_targets,
         captive_portal_detected=captive.portal_detected,
+        ipv6_default_route_present=ipv6_route.present,
     )
 
     elapsed_ms = int((time.monotonic() - t0) * 1000)
@@ -91,5 +101,6 @@ def collect_signals(
         path_primary=path_primary,
         path_secondary=path_secondary,
         captive=captive,
+        ipv6_route=ipv6_route,
         elapsed_ms=elapsed_ms,
     )

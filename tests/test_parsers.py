@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from boundary_probe.collectors._parsers import (
+    _parse_ipv6_route_present_win,
     _parse_ping_win,
     _parse_route_win,
     parse_ping_output,
@@ -123,3 +124,22 @@ def test_route_print_empty():
 def test_route_print_no_default_route():
     text = "127.0.0.0  255.0.0.0  On-link  127.0.0.1  331\n"
     assert parse_route_print_default_gateway(text) is None
+
+
+# ---------------------------------------------------------------------------
+# parse_ipv6_default_route_present (Windows: `route print -6`, presence only)
+# ---------------------------------------------------------------------------
+
+
+def test_ipv6_route_win_present():
+    text = "Active Routes:\n  ::/0                     15  fe80::1\n"
+    assert _parse_ipv6_route_present_win(text) is True
+
+
+def test_ipv6_route_win_absent():
+    assert _parse_ipv6_route_present_win("") is False
+
+
+def test_ipv6_route_win_no_default_entry():
+    text = "  fe80::/64              256  On-link\n"
+    assert _parse_ipv6_route_present_win(text) is False

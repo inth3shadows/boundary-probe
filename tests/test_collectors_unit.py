@@ -5,11 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from boundary_probe.collectors._commands import ping_cmd, route_cmd, traceroute_cmd
+from boundary_probe.collectors._commands import ping_cmd, route6_cmd, route_cmd, traceroute_cmd
 from boundary_probe.collectors._runner import CommandResult
 from boundary_probe.collectors.control_hosts import collect_control_hosts
 from boundary_probe.collectors.gateway import collect_gateway
 from boundary_probe.collectors.ip_connectivity import collect_ip_connectivity
+from boundary_probe.collectors.ipv6_route import collect_ipv6_route
 from boundary_probe.collectors.path import collect_path
 from boundary_probe.collectors.target_service import collect_target_service
 from boundary_probe.targets import ParsedTarget, parse_target
@@ -192,6 +193,45 @@ def test_gateway_ping_total_loss():
     })
     result = collect_gateway(runner)
     assert result.reachable is False
+
+
+# ---------------------------------------------------------------------------
+# collect_ipv6_route
+# ---------------------------------------------------------------------------
+
+if _WIN:
+    _ROUTE6_PRESENT = "Active Routes:\n  ::/0                     15  fe80::1\n"
+    _ROUTE6_ABSENT = "  fe80::/64              256  On-link\n"
+elif _MAC:
+    _ROUTE6_PRESENT = "   route to: default\ndestination: default\n    gateway: fe80::1%en0\n"
+    _ROUTE6_ABSENT = "   route to: default\ndestination: default\n       mask: default\n"
+else:
+    _ROUTE6_PRESENT = "default via fe80::1 dev eth0 proto ra metric 1024\n"
+    _ROUTE6_ABSENT = ""
+
+
+def test_ipv6_route_present():
+    runner = FakeRunner({tuple(route6_cmd()): _ok(_ROUTE6_PRESENT)})
+    result = collect_ipv6_route(runner)
+    assert result.present is True
+
+
+def test_ipv6_route_absent():
+    runner = FakeRunner({tuple(route6_cmd()): _ok(_ROUTE6_ABSENT)})
+    result = collect_ipv6_route(runner)
+    assert result.present is False
+
+
+def test_ipv6_route_timeout_fails_open():
+    runner = FakeRunner({tuple(route6_cmd()): _timeout()})
+    result = collect_ipv6_route(runner)
+    assert result.present is False
+
+
+def test_ipv6_route_nonzero_exit_fails_open():
+    runner = FakeRunner({tuple(route6_cmd()): _ok("", returncode=1)})
+    result = collect_ipv6_route(runner)
+    assert result.present is False
 
 
 # ---------------------------------------------------------------------------

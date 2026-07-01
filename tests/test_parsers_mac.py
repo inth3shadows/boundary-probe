@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from boundary_probe.collectors._parsers import (
+    _parse_ipv6_route_present_mac,
     _parse_ping_mac,
     _parse_route_mac,
     _parse_traceroute_mac,
@@ -83,6 +84,22 @@ def test_mac_route_no_gateway_line():
     # `route -n get default` with no default route prints no gateway: line.
     text = "   route to: default\ndestination: default\n       mask: default\n"
     assert _parse_route_mac(text) is None
+
+
+# --- _parse_ipv6_route_present_mac -----------------------------------------
+
+def test_mac_ipv6_route_present():
+    text = "   route to: default\ndestination: default\n    gateway: fe80::1%en0\n"
+    assert _parse_ipv6_route_present_mac(text) is True
+
+
+def test_mac_ipv6_route_absent():
+    text = "   route to: default\ndestination: default\n       mask: default\n"
+    assert _parse_ipv6_route_present_mac(text) is False
+
+
+def test_mac_ipv6_route_empty():
+    assert _parse_ipv6_route_present_mac("") is False
 
 
 # --- _parse_traceroute_mac (reuses the BSD/Linux parser) ------------------

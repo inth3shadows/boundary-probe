@@ -38,6 +38,7 @@ def _make_collection_result():
     from boundary_probe.collectors.dns import DnsSlice
     from boundary_probe.collectors.gateway import GatewaySlice
     from boundary_probe.collectors.ip_connectivity import IpConnectivitySlice
+    from boundary_probe.collectors.ipv6_route import Ipv6RouteSlice
     from boundary_probe.collectors.orchestrator import CollectionResult
     from boundary_probe.collectors.path import PathSlice
     from boundary_probe.collectors.target_service import TargetServiceSlice
@@ -64,6 +65,7 @@ def _make_collection_result():
                                target="example.com", completed=False, note=""),
         path_secondary=None,
         captive=CaptivePortalSlice(checked=True, portal_detected=False, note=""),
+        ipv6_route=Ipv6RouteSlice(present=False, note=""),
         elapsed_ms=5000,
     )
 

@@ -42,6 +42,7 @@ _BOUNDARY_COLOR = {
     "captive-portal": "yellow",
     "dns": "yellow",
     "isp-upstream": "yellow",
+    "ipv6-only": "yellow",
     "remote-service": "magenta",
     "healthy": "green",
     "inconclusive": "dim",

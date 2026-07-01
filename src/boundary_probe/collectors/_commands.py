@@ -39,3 +39,15 @@ def route_cmd() -> list[str]:
         # macOS has no iproute2; `route -n get default` prints a `gateway:` line.
         return ["route", "-n", "get", "default"]
     return ["ip", "route", "show", "default"]
+
+
+def route6_cmd() -> list[str]:
+    """Return the platform-appropriate command to check IPv6 default-route presence.
+
+    Presence only — no address parsing. Mirrors ``route_cmd()``.
+    """
+    if _WIN:
+        return ["route", "print", "-6"]
+    if _MAC:
+        return ["route", "-n", "get", "-inet6", "default"]
+    return ["ip", "-6", "route", "show", "default"]

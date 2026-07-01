@@ -42,6 +42,22 @@ def _gateway_evidence(signals: SignalSnapshot) -> EvidenceItem:
     )
 
 
+def _ipv6_only(_: SignalSnapshot) -> Diagnosis:
+    return Diagnosis(
+        boundary="ipv6-only",
+        confidence=0.7,
+        summary="No IPv4 default route, but an IPv6 default route is present — your connectivity may be working over IPv6, which this tool does not yet probe. A v4-based diagnosis would mislead, so it is withheld.",
+        evidence=[
+            EvidenceItem("route", "No IPv4 default gateway is present in the local route table."),
+            EvidenceItem("route6", "An IPv6 default route is present."),
+        ],
+        remediation=[
+            "Test the target over IPv6 directly if it supports it — this connection may already be working.",
+            "If you need IPv4-specific connectivity, check why no IPv4 default route was offered (DHCP, ISP dual-stack config).",
+        ],
+    )
+
+
 def _local_device(_: SignalSnapshot) -> Diagnosis:
     return Diagnosis(
         boundary="local-device",
@@ -231,6 +247,16 @@ def _inconclusive(signals: SignalSnapshot) -> Diagnosis:
 # gateway is only blamed when external reachability *also* fails (see model
 # property for the full rationale).
 RULES: list[Rule] = [
+    # Must precede local-device: a host with no v4 default route but a working
+    # v6 one is not "the problem is local to this device" — that would be a
+    # confident misdiagnosis. On a normal dual-stack host gateway_functional is
+    # True, so this rule never fires there; v6 presence is don't-care whenever
+    # v4 already works.
+    Rule(
+        "ipv6-only",
+        {"gateway_functional": False, "default_route_present": False, "ipv6_default_route_present": True},
+        _ipv6_only,
+    ),
     Rule("local-device", {"gateway_functional": False, "default_route_present": False}, _local_device),
     Rule("router-gateway", {"gateway_functional": False}, _router_gateway),
     # Captive portal is decisive and must precede every rule that keys on the

@@ -7,6 +7,7 @@ from boundary_probe.collectors.control_hosts import ControlHostsSlice
 from boundary_probe.collectors.dns import DnsSlice
 from boundary_probe.collectors.gateway import GatewaySlice
 from boundary_probe.collectors.ip_connectivity import IpConnectivitySlice
+from boundary_probe.collectors.ipv6_route import Ipv6RouteSlice
 from boundary_probe.collectors.orchestrator import collect_signals
 from boundary_probe.collectors.path import PathSlice
 from boundary_probe.collectors.target_service import TargetServiceSlice
@@ -20,6 +21,8 @@ _CONTROLS_OK = ControlHostsSlice(all_ok=True, ok_count=4, total=4, results=[], n
 _TARGET = TargetServiceSlice(ok=True, method="ping", target_host="example.com", target_port=None, elapsed_ms=50, note="")
 _CAPTIVE_CLEAN = CaptivePortalSlice(checked=True, portal_detected=False, note="")
 _CAPTIVE_PORTAL = CaptivePortalSlice(checked=True, portal_detected=True, note="HTTP 302")
+_IPV6_ROUTE_ABSENT = Ipv6RouteSlice(present=False, note="no IPv6 default route found")
+_IPV6_ROUTE_PRESENT = Ipv6RouteSlice(present=True, note="")
 _PATH = PathSlice(
     raw_hops=[
         {"index": 1, "host": "192.168.1.1", "loss_pct": 0.0, "rtt_ms": 2.0},
@@ -37,6 +40,7 @@ def test_collect_signals_happy_path_no_secondary():
     target = parse_target("example.com")
     with (
         patch(f"{_MOD}.collect_gateway", return_value=_GATEWAY),
+        patch(f"{_MOD}.collect_ipv6_route", return_value=_IPV6_ROUTE_ABSENT),
         patch(f"{_MOD}.collect_dns", return_value=_DNS),
         patch(f"{_MOD}.collect_ip_connectivity", return_value=_IP_OK),
         patch(f"{_MOD}.collect_control_hosts", return_value=_CONTROLS_OK),
@@ -60,6 +64,7 @@ def test_collect_signals_ip_fail_triggers_secondary_path():
     mock_path = MagicMock(return_value=_PATH)
     with (
         patch(f"{_MOD}.collect_gateway", return_value=_GATEWAY),
+        patch(f"{_MOD}.collect_ipv6_route", return_value=_IPV6_ROUTE_ABSENT),
         patch(f"{_MOD}.collect_dns", return_value=_DNS),
         patch(f"{_MOD}.collect_ip_connectivity", return_value=_IP_FAIL),
         patch(f"{_MOD}.collect_control_hosts", return_value=_CONTROLS_OK),
@@ -79,6 +84,7 @@ def test_collect_signals_skip_path():
     mock_path = MagicMock(return_value=_PATH)
     with (
         patch(f"{_MOD}.collect_gateway", return_value=_GATEWAY),
+        patch(f"{_MOD}.collect_ipv6_route", return_value=_IPV6_ROUTE_ABSENT),
         patch(f"{_MOD}.collect_dns", return_value=_DNS),
         patch(f"{_MOD}.collect_ip_connectivity", return_value=_IP_OK),
         patch(f"{_MOD}.collect_control_hosts", return_value=_CONTROLS_OK),
@@ -97,6 +103,7 @@ def test_collect_signals_captive_portal_flows_to_snapshot():
     target = parse_target("example.com")
     with (
         patch(f"{_MOD}.collect_gateway", return_value=_GATEWAY),
+        patch(f"{_MOD}.collect_ipv6_route", return_value=_IPV6_ROUTE_ABSENT),
         patch(f"{_MOD}.collect_dns", return_value=_DNS),
         patch(f"{_MOD}.collect_ip_connectivity", return_value=_IP_OK),
         patch(f"{_MOD}.collect_control_hosts", return_value=_CONTROLS_OK),
@@ -110,12 +117,31 @@ def test_collect_signals_captive_portal_flows_to_snapshot():
     assert result.snapshot.captive_portal_detected is True
 
 
+def test_collect_signals_ipv6_route_flows_to_snapshot():
+    target = parse_target("example.com")
+    with (
+        patch(f"{_MOD}.collect_gateway", return_value=_GATEWAY),
+        patch(f"{_MOD}.collect_ipv6_route", return_value=_IPV6_ROUTE_PRESENT),
+        patch(f"{_MOD}.collect_dns", return_value=_DNS),
+        patch(f"{_MOD}.collect_ip_connectivity", return_value=_IP_OK),
+        patch(f"{_MOD}.collect_control_hosts", return_value=_CONTROLS_OK),
+        patch(f"{_MOD}.collect_target_service", return_value=_TARGET),
+        patch(f"{_MOD}.collect_path", return_value=_PATH),
+        patch(f"{_MOD}.collect_captive_portal", return_value=_CAPTIVE_CLEAN),
+    ):
+        result = collect_signals(target, runner=MagicMock())
+
+    assert result.ipv6_route.present is True
+    assert result.snapshot.ipv6_default_route_present is True
+
+
 def test_collect_signals_skip_captive_makes_no_check():
     # skip_captive must short-circuit the captive collector entirely (no network).
     target = parse_target("example.com")
     captive = MagicMock(return_value=_CAPTIVE_CLEAN)
     with (
         patch(f"{_MOD}.collect_gateway", return_value=_GATEWAY),
+        patch(f"{_MOD}.collect_ipv6_route", return_value=_IPV6_ROUTE_ABSENT),
         patch(f"{_MOD}.collect_dns", return_value=_DNS),
         patch(f"{_MOD}.collect_ip_connectivity", return_value=_IP_OK),
         patch(f"{_MOD}.collect_control_hosts", return_value=_CONTROLS_OK),

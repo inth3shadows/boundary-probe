@@ -47,6 +47,18 @@ def test_route_cmd_linux():
     assert result == ["ip", "route", "show", "default"]
 
 
+def test_route6_cmd_windows():
+    with patch.object(cmd_mod, "_WIN", True):
+        result = cmd_mod.route6_cmd()
+    assert result == ["route", "print", "-6"]
+
+
+def test_route6_cmd_linux():
+    with patch.object(cmd_mod, "_WIN", False), patch.object(cmd_mod, "_MAC", False):
+        result = cmd_mod.route6_cmd()
+    assert result == ["ip", "-6", "route", "show", "default"]
+
+
 # --- macOS (darwin) -------------------------------------------------------
 
 def test_ping_cmd_mac():
@@ -69,3 +81,9 @@ def test_route_cmd_mac():
     with patch.object(cmd_mod, "_WIN", False), patch.object(cmd_mod, "_MAC", True):
         result = cmd_mod.route_cmd()
     assert result == ["route", "-n", "get", "default"]
+
+
+def test_route6_cmd_mac():
+    with patch.object(cmd_mod, "_WIN", False), patch.object(cmd_mod, "_MAC", True):
+        result = cmd_mod.route6_cmd()
+    assert result == ["route", "-n", "get", "-inet6", "default"]

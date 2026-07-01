@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from boundary_probe.collectors._parsers import (
+    _parse_ipv6_route_present_linux,
     _parse_ping_linux,
     _parse_route_linux,
     _parse_traceroute_linux,
@@ -153,3 +154,17 @@ def test_linux_route_empty():
 def test_linux_route_no_default():
     text = "192.168.1.0/24 dev eth0 proto kernel scope link src 192.168.1.50\n"
     assert _parse_route_linux(text) is None
+
+
+# ---------------------------------------------------------------------------
+# _parse_ipv6_route_present_linux
+# ---------------------------------------------------------------------------
+
+
+def test_linux_ipv6_route_present():
+    text = "default via fe80::1 dev eth0 proto ra metric 1024\n"
+    assert _parse_ipv6_route_present_linux(text) is True
+
+
+def test_linux_ipv6_route_absent():
+    assert _parse_ipv6_route_present_linux("") is False

@@ -91,6 +91,7 @@ def test_diagnose_collector_details_in_text_output(monkeypatch, tmp_db, fake_col
     output = _run(["diagnose", "example.com"])
     assert "Collector details:" in output
     assert "Gateway:" in output
+    assert "IPv6:" in output
     assert "Controls:" in output
 
 

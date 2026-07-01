@@ -77,7 +77,9 @@ def test_forwarding_gateway_is_never_blamed_locally() -> None:
     # Invariant pinning the ICMP-filtered-gateway false positive: if traffic
     # provably traversed the gateway (the canary or control hosts are reachable),
     # the gateway cannot be the accused boundary — regardless of whether it
-    # answered ICMP. Holds across all 2^8 signal combinations.
+    # answered ICMP. Holds across all combinations in _all_snapshots() (currently
+    # 2^len(_BOOL_FIELDS) — don't hardcode the exponent here, it drifts every
+    # time a field is added).
     for snap in _all_snapshots():
         if snap.ip_connectivity_ok or snap.control_hosts_ok:
             boundary = diagnose(snap).boundary

@@ -45,7 +45,13 @@ def collect_signals(
     cfg = load_config()
 
     gateway = collect_gateway(r, cfg=cfg)
-    ipv6_route = collect_ipv6_route(r, cfg=cfg)
+    # ipv6_default_route_present is don't-care whenever a v4 default route
+    # exists (the ipv6-only engine rule requires default_route_present=False),
+    # so skip the extra subprocess + timeout on the common healthy-host path.
+    if gateway.gateway_ip is None:
+        ipv6_route = collect_ipv6_route(r, cfg=cfg)
+    else:
+        ipv6_route = Ipv6RouteSlice(present=False, note="skipped: IPv4 default route present")
     dns = collect_dns(parsed_target.host)
     ip = collect_ip_connectivity(r, cfg=cfg)
     controls = collect_control_hosts(r, cfg=cfg)

@@ -184,6 +184,10 @@ def _format_collector_details(result: CollectionResult) -> str:
     else:
         lines.append("  Gateway:  — (not determined)")
 
+    v6 = result.ipv6_route
+    v6_str = "route present" if v6.present else (v6.note or "no route")
+    lines.append(f"  IPv6:     {v6_str}")
+
     dns = result.dns
     if dns.resolved_ips:
         ips = ", ".join(dns.resolved_ips[:3])

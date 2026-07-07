@@ -88,6 +88,66 @@ def test_rejects_host_with_space():
         parse_target("bad host")
 
 
+# ---------------------------------------------------------------------------
+# Port validation — an unvalidated port doesn't fail loudly, it gets silently
+# truncated to 16 bits by socket.getaddrinfo() downstream, so the TCP-connect
+# collector would probe the WRONG port and hand back a diagnosis for a target
+# the user never asked about. Must raise, matching how the URL branch already
+# rejects out-of-range ports via urlsplit's .port property.
+# ---------------------------------------------------------------------------
+
+
+def test_rejects_out_of_range_port_on_hostname():
+    with pytest.raises(ValueError):
+        parse_target("example.com:99999")
+
+
+def test_rejects_out_of_range_port_on_ip():
+    with pytest.raises(ValueError):
+        parse_target("1.1.1.1:99999")
+
+
+def test_rejects_non_numeric_port():
+    with pytest.raises(ValueError):
+        parse_target("example.com:abc")
+
+
+def test_accepts_boundary_port_values():
+    assert parse_target("example.com:0").port == 0
+    assert parse_target("example.com:65535").port == 65535
+
+
+def test_url_already_rejects_out_of_range_port():
+    # Confirms the URL branch's pre-existing behavior (urlsplit's .port property
+    # raises ValueError) so both branches are consistent.
+    with pytest.raises(ValueError):
+        parse_target("http://example.com:99999/")
+
+
+def test_trailing_colon_empty_port_hostname_is_none():
+    # A bare trailing colon with no port ("host:") must NOT raise — it parses as
+    # the host with port=None. Matches the URL form "http://host:/" (urlsplit
+    # yields port=None there) and preserves pre-PR behavior for this shape.
+    t = parse_target("example.com:")
+    assert t.kind == "host"
+    assert t.host == "example.com"
+    assert t.port is None
+
+
+def test_trailing_colon_empty_port_ip_is_none():
+    t = parse_target("1.1.1.1:")
+    assert t.kind == "ip"
+    assert t.host == "1.1.1.1"
+    assert t.port is None
+
+
+def test_trailing_colon_matches_url_branch_behavior():
+    # The equivalent URL shape "http://host:/" also parses to port=None with no
+    # error — both branches must agree that an empty port is not a malformed one.
+    assert parse_target("http://example.com:/").port is None
+    assert parse_target("example.com:").port is None
+
+
 def test_rejects_url_with_empty_host():
     with pytest.raises(ValueError):
         parse_target("https:///path")

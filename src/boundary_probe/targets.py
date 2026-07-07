@@ -38,7 +38,12 @@ def parse_target(raw: str) -> ParsedTarget:
       - IP:       "1.1.1.1" or "192.168.1.1:443" (IPv4 only; IPv6 rejected)
       - Hostname: "example.com" or "example.com:443"
 
-    Raises ValueError for empty input or IPv6 literals.
+    Raises ValueError for empty input, IPv6 literals, or a malformed/out-of-range
+    port (0-65535). A silently-dropped or silently-wrapped bad port is worse than
+    a loud error: ``socket.getaddrinfo`` truncates an out-of-range port to 16 bits
+    instead of raising, so an unvalidated port here would make the TCP-connect
+    collector silently probe the wrong port and hand back a diagnosis for a
+    target the user never asked about.
     """
     if not raw or not raw.strip():
         raise ValueError("target must not be empty")
@@ -57,8 +62,15 @@ def parse_target(raw: str) -> ParsedTarget:
             scheme=parsed.scheme or None,
         )
 
-    host_part, _, port_str = raw.partition(":")
-    port = int(port_str) if port_str.isdigit() else None
+    host_part, sep, port_str = raw.partition(":")
+    port: int | None = None
+    if sep and port_str:
+        # A bare trailing colon with an empty port ("host:") is port=None, no
+        # error — matching how urlsplit treats the URL form "http://host:/".
+        # Only a *non-empty* port string is range-checked.
+        if not port_str.isdigit() or not (0 <= int(port_str) <= 65535):
+            raise ValueError(f"invalid port in target: {raw!r}")
+        port = int(port_str)
 
     try:
         addr = ipaddress.ip_address(host_part)

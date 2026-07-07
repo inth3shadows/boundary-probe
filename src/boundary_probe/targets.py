@@ -64,7 +64,10 @@ def parse_target(raw: str) -> ParsedTarget:
 
     host_part, sep, port_str = raw.partition(":")
     port: int | None = None
-    if sep:
+    if sep and port_str:
+        # A bare trailing colon with an empty port ("host:") is port=None, no
+        # error — matching how urlsplit treats the URL form "http://host:/".
+        # Only a *non-empty* port string is range-checked.
         if not port_str.isdigit() or not (0 <= int(port_str) <= 65535):
             raise ValueError(f"invalid port in target: {raw!r}")
         port = int(port_str)

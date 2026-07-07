@@ -124,6 +124,30 @@ def test_url_already_rejects_out_of_range_port():
         parse_target("http://example.com:99999/")
 
 
+def test_trailing_colon_empty_port_hostname_is_none():
+    # A bare trailing colon with no port ("host:") must NOT raise — it parses as
+    # the host with port=None. Matches the URL form "http://host:/" (urlsplit
+    # yields port=None there) and preserves pre-PR behavior for this shape.
+    t = parse_target("example.com:")
+    assert t.kind == "host"
+    assert t.host == "example.com"
+    assert t.port is None
+
+
+def test_trailing_colon_empty_port_ip_is_none():
+    t = parse_target("1.1.1.1:")
+    assert t.kind == "ip"
+    assert t.host == "1.1.1.1"
+    assert t.port is None
+
+
+def test_trailing_colon_matches_url_branch_behavior():
+    # The equivalent URL shape "http://host:/" also parses to port=None with no
+    # error — both branches must agree that an empty port is not a malformed one.
+    assert parse_target("http://example.com:/").port is None
+    assert parse_target("example.com:").port is None
+
+
 def test_rejects_url_with_empty_host():
     with pytest.raises(ValueError):
         parse_target("https:///path")

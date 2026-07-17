@@ -40,8 +40,22 @@ def _copy_to_clipboard(text: str) -> bool:
     return False
 
 
+def _bp_version() -> str:
+    """Installed distribution version, falling back to the package `__version__` when run
+    from an un-built source tree. importlib.metadata reflects the ACTUAL installed dist."""
+    from importlib.metadata import PackageNotFoundError
+    from importlib.metadata import version as _dist_version
+    try:
+        return _dist_version("boundary-probe")
+    except PackageNotFoundError:
+        from boundary_probe import __version__
+        return __version__
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="boundary-probe")
+    parser.add_argument("--version", action="version",
+                        version=f"%(prog)s {_bp_version()}")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     subparsers.add_parser("roadmap", help="Print the current implementation sequence.")

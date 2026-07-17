@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=68", "setuptools-scm>=8", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -44,11 +44,13 @@ dev = [
 [project.scripts]
 boundary-probe = "boundary_probe.cli:main"
 
-[tool.setuptools.dynamic]
-# Single source of truth for the version: src/boundary_probe/__init__.py.
-# setuptools reads the literal via ast (no import), so tag-time releases can
-# never disagree with the installed package.
-version = {attr = "boundary_probe.__version__"}
+# Single source of version truth: the GIT TAG (setuptools-scm derives it from
+# `git describe`). The previous attr-from-literal kept pyproject and the package in
+# sync but NOT the tag — tagging v0.2.0 while the literal said 0.1.0 shipped 0.1.0.
+# Deriving from the tag removes that drift class entirely: a build on a tag IS that
+# tag; between tags it is a dev version. Requires full git history in CI (fetch-depth: 0).
+[tool.setuptools_scm]
+version_file = "src/boundary_probe/_version.py"
 
 [tool.setuptools.packages.find]
 where = ["src"]

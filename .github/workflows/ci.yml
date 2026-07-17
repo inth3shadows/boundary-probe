@@ -18,6 +18,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # setuptools-scm derives the version from git history + tags
 
       - uses: actions/setup-python@v5
         with:

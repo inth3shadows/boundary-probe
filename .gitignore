@@ -6,6 +6,8 @@ __pycache__/
 uv.lock
 dist/
 build/
+# setuptools-scm build-time version file (generated from the git tag; never committed)
+src/boundary_probe/_version.py
 *.pyc
 *.pyo
 *.pyd

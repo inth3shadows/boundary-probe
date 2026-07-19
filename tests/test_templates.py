@@ -96,6 +96,60 @@ class TestRenderEscalation:
         # router-gateway or inconclusive → local summary
         assert "LOCAL NETWORK INCIDENT SUMMARY" in text
 
+    def test_dns_gets_its_own_title_not_local_incident(self, tmp_db, fake_collection_result):
+        # Regression (#22): a DNS failure is not necessarily a *local* incident —
+        # the configured resolver may be public or the ISP's. The report must not
+        # be titled as a local network incident.
+        import dataclasses
+
+        from boundary_probe.models import SignalSnapshot
+        from boundary_probe.store import fetch_run
+
+        dns_snap = SignalSnapshot(
+            gateway_reachable=True, dns_ok=False, ip_connectivity_ok=True,
+            control_hosts_ok=False, target_service_ok=False,
+        )
+        result = dataclasses.replace(fake_collection_result, snapshot=dns_snap)
+        parsed = parse_target("example.com")
+        diag = diagnose(dns_snap)
+        assert diag.boundary == "dns"
+        with connect() as conn:
+            uuid = insert_run(conn, parsed_target=parsed, snapshot=dns_snap,
+                              diagnosis=diag, collection_result=result)
+        with connect() as conn:
+            row = fetch_run(conn, uuid)
+
+        text = render_escalation(row)
+        assert "DNS RESOLUTION FAILURE REPORT" in text
+        assert "LOCAL NETWORK INCIDENT" not in text
+
+    def test_captive_portal_gets_its_own_title_not_local_incident(self, tmp_db, fake_collection_result):
+        # Regression (#22): a captive portal is usually somebody else's network
+        # (hotel, airport, café) — the local-incident title mislabels it.
+        import dataclasses
+
+        from boundary_probe.models import SignalSnapshot
+        from boundary_probe.store import fetch_run
+
+        portal_snap = SignalSnapshot(
+            gateway_reachable=True, dns_ok=True, ip_connectivity_ok=True,
+            control_hosts_ok=False, target_service_ok=False,
+            captive_portal_detected=True,
+        )
+        result = dataclasses.replace(fake_collection_result, snapshot=portal_snap)
+        parsed = parse_target("example.com")
+        diag = diagnose(portal_snap)
+        assert diag.boundary == "captive-portal"
+        with connect() as conn:
+            uuid = insert_run(conn, parsed_target=parsed, snapshot=portal_snap,
+                              diagnosis=diag, collection_result=result)
+        with connect() as conn:
+            row = fetch_run(conn, uuid)
+
+        text = render_escalation(row)
+        assert "CAPTIVE PORTAL INTERCEPTION REPORT" in text
+        assert "LOCAL NETWORK INCIDENT" not in text
+
     def test_contains_run_uuid(self, tmp_db, fake_collection_result):
         row, uuid = _make_row(tmp_db, fake_collection_result)
         text = render_escalation(row)

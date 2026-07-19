@@ -154,8 +154,8 @@ def _isp_upstream(signals: SignalSnapshot) -> Diagnosis:
         evidence=[
             _gateway_evidence(signals),
             EvidenceItem("dns", "DNS is working."),
-            EvidenceItem("path", "Loss begins after hop 1."),
-            EvidenceItem("breadth", "More than one external target shows the same degradation."),
+            EvidenceItem("path", "The gateway answers normally, but packets to destinations beyond it are being lost."),
+            EvidenceItem("breadth", "At least two independent external destinations show the same loss, measured by direct echo replies rather than traceroute."),
         ],
         remediation=[
             "Repeat the run twice more over a 10-15 minute window to confirm it is not a transient spike.",

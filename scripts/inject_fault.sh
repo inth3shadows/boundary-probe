@@ -196,17 +196,16 @@ inject() {
       # netem loss, so packet_loss_after_hop1 fires across multiple targets
       # while dns_ok / gateway stay green.
       #
-      # The loss % is overridable so injected fixtures can SWEEP the engine's
-      # path-loss threshold (default 20%) instead of always sitting far above it:
+      # The netem loss % is overridable:
       #   sudo BP_ISP_LOSS_PCT=22 scripts/inject_fault.sh capture isp-loss
-      # A capture at 15/22/25% exercises the ambiguous band calibrate.py's
-      # measurement pass flags; the default 50% clears the bar cleanly (the prior
-      # behaviour). Each run writes the SAME tests/fixtures/isp-loss.json, so to
-      # keep several, rename after each capture:
-      #   mv tests/fixtures/isp-loss.json tests/fixtures/isp-loss-22.json
-      # (the capture name must stay 'isp-loss' — it keys the ground-truth map.)
+      # Do NOT expect the captured per-hop loss to match the value set here.
+      # traceroute sends 3 probes per hop, so a hop's measured loss can only be
+      # 0/33/67/100% regardless of the injected rate — see issue #41. The knob
+      # varies the fault's severity; it does not set a measured percentage.
       local isp_loss_pct="${BP_ISP_LOSS_PCT:-50}"
-      if ! [[ "$isp_loss_pct" =~ ^[0-9]+$ ]] || (( isp_loss_pct < 1 || isp_loss_pct > 100 )); then
+      # 10# forces base-10 so a leading zero is not read as octal (`08` raises an
+      # arithmetic error whose non-zero status the `||` would swallow).
+      if ! [[ "$isp_loss_pct" =~ ^[0-9]+$ ]] || (( 10#$isp_loss_pct < 1 || 10#$isp_loss_pct > 100 )); then
         echo "error: BP_ISP_LOSS_PCT must be an integer 1-100 (got '$isp_loss_pct')" >&2
         exit 2
       fi

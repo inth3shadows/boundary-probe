@@ -433,3 +433,64 @@ def test_escalate_without_export_writes_no_bundle(tmp_db, fake_collection_result
     _run(["escalate", uuid])
     assert (tmp_path / f"escalation_{uuid[:8]}.txt").exists()
     assert not (tmp_path / f"escalation_{uuid[:8]}.json").exists()
+
+
+def test_escalate_scrub_without_export_is_refused(tmp_db, fake_collection_result, tmp_path,
+                                                  monkeypatch, capsys):
+    # Regression: --scrub used to be silently ignored without --export, so a
+    # privacy-motivated user got an unredacted report and no indication.
+    uuid = _seeded_run_uuid(fake_collection_result)
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(SystemExit) as exc:
+        _run(["escalate", uuid, "--scrub"])
+    assert exc.value.code == 2
+    assert "--scrub only applies" in capsys.readouterr().err
+    # Refused before anything was written — no half-done report to mistake for redacted.
+    assert not list(tmp_path.glob("escalation_*"))
+
+
+def test_escalate_export_to_missing_directory_fails_cleanly(tmp_db, fake_collection_result,
+                                                            tmp_path, monkeypatch, capsys):
+    # Must be a CLI error, not a traceback out of write_text.
+    uuid = _seeded_run_uuid(fake_collection_result)
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(SystemExit) as exc:
+        _run(["escalate", uuid, "--export", "no/such/dir/b.json", "--no-file"])
+    assert exc.value.code == 4
+    assert "could not write bundle" in capsys.readouterr().err
+
+
+def test_escalate_export_empty_path_is_refused(tmp_db, fake_collection_result, tmp_path,
+                                               monkeypatch, capsys):
+    # `--export ""` is a falsy string, which would otherwise resolve to the cwd.
+    uuid = _seeded_run_uuid(fake_collection_result)
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(SystemExit) as exc:
+        _run(["escalate", uuid, "--export", "", "--no-file"])
+    assert exc.value.code == 2
+    assert "must not be empty" in capsys.readouterr().err
+
+
+def test_escalate_export_colliding_with_report_is_refused(tmp_db, fake_collection_result,
+                                                          tmp_path, monkeypatch, capsys):
+    # Otherwise the bundle silently overwrites the .txt written a moment earlier.
+    uuid = _seeded_run_uuid(fake_collection_result)
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(SystemExit) as exc:
+        _run(["escalate", uuid, "--export", f"escalation_{uuid[:8]}.txt"])
+    assert exc.value.code == 2
+    assert "collides with the report file" in capsys.readouterr().err
+    assert (tmp_path / f"escalation_{uuid[:8]}.txt").read_text().startswith("SERVICE PROVIDER")
+
+
+def test_escalate_export_with_output_and_copy(tmp_db, fake_collection_result, tmp_path, monkeypatch):
+    # --export composes with the pre-existing flags rather than replacing them.
+    import json
+
+    monkeypatch.setattr("boundary_probe.cli._copy_to_clipboard", lambda text: True)
+    uuid = _seeded_run_uuid(fake_collection_result)
+    monkeypatch.chdir(tmp_path)
+    out = _run(["escalate", uuid, "--output", "r.txt", "--export", "b.json", "--copy"])
+    assert (tmp_path / "r.txt").exists()
+    assert json.loads((tmp_path / "b.json").read_text())["run"]["uuid"] == uuid
+    assert "Copied to clipboard." in out

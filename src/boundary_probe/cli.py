@@ -391,16 +391,25 @@ def _escalate(run_uuid: str, copy: bool, output: str | None, no_file: bool,
         print(f"error: run not found: {run_uuid}", file=sys.stderr)
         sys.exit(2)
 
+    # Refuse before any output: --scrub only affects the exported bundle, so
+    # silently accepting it on a plain `escalate` would tell a user their report
+    # was redacted when nothing redacted it.
+    if scrub and export is None:
+        print("error: --scrub only applies to the exported bundle; add --export "
+              "(the .txt report is never redacted).", file=sys.stderr)
+        sys.exit(2)
+
     text = render_escalation(row)
     print(text)
 
+    txt_path = None
     if not no_file:
-        out_path = Path(output) if output else Path(f"escalation_{run_uuid[:8]}.txt")
-        out_path.write_text(text, encoding="utf-8")
-        print(f"Saved: {out_path}")
+        txt_path = Path(output) if output else Path(f"escalation_{run_uuid[:8]}.txt")
+        _write_text_file(txt_path, text, "report")
+        print(f"Saved: {txt_path}")
 
     if export is not None:
-        _write_bundle(row, text, export, scrub=scrub)
+        _write_bundle(row, text, export, scrub=scrub, txt_path=txt_path)
 
     if copy:
         if _copy_to_clipboard(text):
@@ -409,12 +418,38 @@ def _escalate(run_uuid: str, copy: bool, output: str | None, no_file: bool,
             print("warning: clipboard tool not found; copy skipped.", file=sys.stderr)
 
 
-def _write_bundle(row, report_text: str, export: str | bool, *, scrub: bool) -> None:
+def _write_text_file(path: Path, text: str, what: str) -> None:
+    """Write ``text`` to ``path``, turning an OS error into a clean CLI failure.
+
+    A missing parent directory or a path that is itself a directory is user error,
+    not a bug — it should not surface as a traceback, least of all after the report
+    has already been printed.
+    """
+    try:
+        path.write_text(text, encoding="utf-8")
+    except OSError as exc:
+        print(f"error: could not write {what} to {path}: {exc.strerror or exc}", file=sys.stderr)
+        sys.exit(4)
+
+
+def _write_bundle(row, report_text: str, export: str | bool, *, scrub: bool,
+                  txt_path: Path | None = None) -> None:
     """Write the JSON support bundle and report what it does or does not contain."""
-    bundle, hits = build_bundle(row, report_text, scrub=scrub)
     run_uuid = row["run_uuid"]
+    # `--export` alone arrives as True; `--export PATH` as the path. An empty
+    # string is neither, and would silently resolve to the current directory.
+    if isinstance(export, str) and not export.strip():
+        print("error: --export PATH must not be empty.", file=sys.stderr)
+        sys.exit(2)
     path = Path(export) if isinstance(export, str) else Path(f"escalation_{run_uuid[:8]}.json")
-    path.write_text(json.dumps(bundle, indent=2) + "\n", encoding="utf-8")
+
+    if txt_path is not None and path.resolve() == txt_path.resolve():
+        print(f"error: --export path collides with the report file ({txt_path}); "
+              "choose another path or pass --no-file.", file=sys.stderr)
+        sys.exit(2)
+
+    bundle, hits = build_bundle(row, report_text, scrub=scrub)
+    _write_text_file(path, json.dumps(bundle, indent=2) + "\n", "bundle")
     print(f"Saved bundle: {path}")
 
     if scrub:

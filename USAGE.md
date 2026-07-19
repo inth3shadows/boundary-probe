@@ -137,8 +137,14 @@ Two fields make it verifiable rather than just readable:
 - `bundle_version` and `tool.version` — so a recipient can parse against a known
   schema instead of guessing when the shape changes.
 - `integrity.payload_sha256` — a hash over the document with the `integrity` key
-  removed and the rest serialized with sorted keys and compact separators. It
-  proves the bundle was forwarded unedited.
+  removed and the rest serialized with `sort_keys=True`, `(",", ":")` separators
+  and `ensure_ascii=True`, then hashed as UTF-8 bytes. All three settings are
+  part of the contract: the report text contains an em dash, so a verifier using
+  `ensure_ascii=False` computes a different digest for an identical bundle.
+
+  It detects corruption or truncation in transit. It is an unkeyed digest and the
+  tool that computes it ships with the bundle, so it does not prove that nobody
+  deliberately edited the file and recomputed the hash.
 
 ### Public IPs in the bundle
 
@@ -157,6 +163,25 @@ boundary-probe escalate <run-uuid> --export --scrub
 Private, CGNAT, and unanswered (`*`) hops survive scrubbing — they reveal nothing
 about you, and dropping them would erase the local-versus-upstream boundary the
 report depends on. Scrubbed bundles are re-hashed, so they still verify.
+
+Redaction covers the **whole document**: the same address is removed from the
+structured measurements, from the prose collector notes, and from the copy of the
+report embedded in the bundle — including the dash-separated form an ISP bakes
+into a reverse-DNS name (`cpe-1-2-3-4.example.net`).
+
+Two limits worth knowing before you post a bundle publicly:
+
+- `--scrub` redacts **your** network's addresses, not the target's. Resolved
+  target addresses, the canary IP, and control hosts stay — they identify what you
+  were probing, not where you are. If you diagnosed a self-hosted host, its
+  resolved address may be your own WAN address.
+- `target.raw` is exported exactly as you typed it. Diagnosing a URL with a
+  session token or signed query string puts that string in the bundle. Scrubbing
+  does not touch it.
+
+The `.txt` report is **never** redacted — `--scrub` applies only to the exported
+bundle. `escalate <uuid> --scrub` without `--export` is refused rather than
+silently ignored.
 
 ## Capturing a Fixture
 

@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import argparse
-import copy
 import datetime
-import ipaddress
 import json
 import re
 import subprocess
@@ -11,6 +9,12 @@ import sys
 from dataclasses import asdict
 from pathlib import Path
 
+# Re-exported under their historical private names: the scrubber moved to
+# `bundle` so the fixture capture and the support bundle share one implementation.
+from boundary_probe.bundle import SCRUB_PLACEHOLDER as _SCRUB_PLACEHOLDER
+from boundary_probe.bundle import build_bundle
+from boundary_probe.bundle import is_public_ip as _is_public_ip  # noqa: F401  (kept for callers/tests)
+from boundary_probe.bundle import scrub_measurements as _scrub_measurements
 from boundary_probe.collectors import collect_signals
 from boundary_probe.collectors.orchestrator import CollectionResult
 from boundary_probe.config import get_config_path, load_config
@@ -94,6 +98,14 @@ def _build_parser() -> argparse.ArgumentParser:
                                  help="Write the report to PATH instead of the default file.")
     escalate_parser.add_argument("--no-file", action="store_true", dest="no_file",
                                  help="Do not write a .txt file.")
+    escalate_parser.add_argument("--export", metavar="PATH", nargs="?", const=True, default=None,
+                                 help="Also write a JSON support bundle (run metadata, signals, "
+                                      "diagnosis, raw measurements, and the report) for attaching "
+                                      "to a ticket. Optional PATH overrides the default filename.")
+    escalate_parser.add_argument("--scrub", action="store_true",
+                                 help="Redact public IPs (gateway, traceroute hops) from the "
+                                      "exported bundle. Off by default: the WAN path is the "
+                                      "evidence an ISP needs. Use before posting publicly.")
 
     ui_parser = subparsers.add_parser("ui", help="Launch the local web UI.")
     ui_parser.add_argument("--port", type=int, default=8787,
@@ -369,7 +381,8 @@ def _print_diagnose(target: str, as_json: bool, history: int | None, skip_path: 
     print(f"Run saved: {run_uuid}")
 
 
-def _escalate(run_uuid: str, copy: bool, output: str | None, no_file: bool) -> None:
+def _escalate(run_uuid: str, copy: bool, output: str | None, no_file: bool,
+              export: str | bool | None = None, scrub: bool = False) -> None:
     from boundary_probe.templates import render_escalation
 
     with connect() as conn:
@@ -378,13 +391,25 @@ def _escalate(run_uuid: str, copy: bool, output: str | None, no_file: bool) -> N
         print(f"error: run not found: {run_uuid}", file=sys.stderr)
         sys.exit(2)
 
+    # Refuse before any output: --scrub only affects the exported bundle, so
+    # silently accepting it on a plain `escalate` would tell a user their report
+    # was redacted when nothing redacted it.
+    if scrub and export is None:
+        print("error: --scrub only applies to the exported bundle; add --export "
+              "(the .txt report is never redacted).", file=sys.stderr)
+        sys.exit(2)
+
     text = render_escalation(row)
     print(text)
 
+    txt_path = None
     if not no_file:
-        out_path = Path(output) if output else Path(f"escalation_{run_uuid[:8]}.txt")
-        out_path.write_text(text, encoding="utf-8")
-        print(f"Saved: {out_path}")
+        txt_path = Path(output) if output else Path(f"escalation_{run_uuid[:8]}.txt")
+        _write_text_file(txt_path, text, "report")
+        print(f"Saved: {txt_path}")
+
+    if export is not None:
+        _write_bundle(row, text, export, scrub=scrub, txt_path=txt_path)
 
     if copy:
         if _copy_to_clipboard(text):
@@ -393,50 +418,49 @@ def _escalate(run_uuid: str, copy: bool, output: str | None, no_file: bool) -> N
             print("warning: clipboard tool not found; copy skipped.", file=sys.stderr)
 
 
-_SCRUB_PLACEHOLDER = "<scrubbed-public-ip>"
+def _write_text_file(path: Path, text: str, what: str) -> None:
+    """Write ``text`` to ``path``, turning an OS error into a clean CLI failure.
 
-
-def _is_public_ip(value: object) -> bool:
-    """True if ``value`` is a globally-routable IP (the kind that leaks a location).
-
-    Private/CGNAT/loopback/link-local (RFC1918, 100.64/10, 127/8, the WSL2 172.31.x
-    NAT) are non-identifying and kept. Non-IP strings ("*", a hostname) return False.
+    A missing parent directory or a path that is itself a directory is user error,
+    not a bug — it should not surface as a traceback, least of all after the report
+    has already been printed.
     """
     try:
-        return ipaddress.ip_address(str(value)).is_global
-    except ValueError:
-        return False
+        path.write_text(text, encoding="utf-8")
+    except OSError as exc:
+        print(f"error: could not write {what} to {path}: {exc.strerror or exc}", file=sys.stderr)
+        sys.exit(4)
 
 
-def _scrub_measurements(measurements: dict, *, scrub: bool) -> tuple[dict, list[str]]:
-    """Redact public IPs from a captured ``measurements`` block before it is written.
+def _write_bundle(row, report_text: str, export: str | bool, *, scrub: bool,
+                  txt_path: Path | None = None) -> None:
+    """Write the JSON support bundle and report what it does or does not contain."""
+    run_uuid = row["run_uuid"]
+    # `--export` alone arrives as True; `--export PATH` as the path. An empty
+    # string is neither, and would silently resolve to the current directory.
+    if isinstance(export, str) and not export.strip():
+        print("error: --export PATH must not be empty.", file=sys.stderr)
+        sys.exit(2)
+    path = Path(export) if isinstance(export, str) else Path(f"escalation_{run_uuid[:8]}.json")
 
-    This repo is public; a real traceroute capture exposes the ISP path and
-    public-facing IPs. With ``scrub=True`` the public IPs in traceroute hops and the
-    gateway address are replaced with a placeholder and the redactions are returned.
-    With ``scrub=False`` nothing is changed and the returned list reports the public
-    IPs that were *found* (so the caller can refuse to write them). See issue #11.
-    """
-    out = copy.deepcopy(measurements)
-    hits: list[str] = []
+    if txt_path is not None and path.resolve() == txt_path.resolve():
+        print(f"error: --export path collides with the report file ({txt_path}); "
+              "choose another path or pass --no-file.", file=sys.stderr)
+        sys.exit(2)
 
-    gw = out.get("gateway")
-    if isinstance(gw, dict) and _is_public_ip(gw.get("gateway_ip")):
-        hits.append(f"gateway.gateway_ip={gw['gateway_ip']}")
-        if scrub:
-            gw["gateway_ip"] = _SCRUB_PLACEHOLDER
+    bundle, hits = build_bundle(row, report_text, scrub=scrub)
+    _write_text_file(path, json.dumps(bundle, indent=2) + "\n", "bundle")
+    print(f"Saved bundle: {path}")
 
-    for key in ("path_primary", "path_secondary"):
-        slice_ = out.get(key)
-        if not isinstance(slice_, dict):
-            continue
-        for hop in slice_.get("raw_hops", []):
-            if isinstance(hop, dict) and _is_public_ip(hop.get("host")):
-                hits.append(f"{key}.hop[{hop.get('index')}].host={hop['host']}")
-                if scrub:
-                    hop["host"] = _SCRUB_PLACEHOLDER
-
-    return out, hits
+    if scrub:
+        for h in hits:
+            print(f"  scrubbed: {h} -> {_SCRUB_PLACEHOLDER}", file=sys.stderr)
+    elif hits:
+        # Not an error: the WAN path is what makes an isp-upstream bundle
+        # actionable. Name the exposure so the choice to forward it is informed.
+        print(f"note: bundle contains {len(hits)} public IP(s) from your network path "
+              f"(gateway/traceroute). Re-run with --scrub before posting it publicly.",
+              file=sys.stderr)
 
 
 def _build_capture_payload(
@@ -566,7 +590,8 @@ def main(argv: list[str] | None = None) -> None:
         )
         return
     if args.command == "escalate":
-        _escalate(args.run_uuid, copy=args.copy, output=args.output, no_file=args.no_file)
+        _escalate(args.run_uuid, copy=args.copy, output=args.output, no_file=args.no_file,
+                  export=args.export, scrub=args.scrub)
         return
     if args.command == "ui":
         from boundary_probe.ui import launch_server

@@ -75,6 +75,24 @@ def _parse_ping_win(stdout: str) -> PingStats:
     return PingStats(sent=sent, received=received, loss_pct=loss_pct, min_ms=min_ms, avg_ms=avg_ms, max_ms=max_ms)
 
 
+_WIN_HOP_BRACKET_IP_RE = re.compile(r"\[([0-9a-fA-F:.]+)\]\s*$")
+
+
+def _win_hop_host(field: str) -> str:
+    """Reduce a Windows tracert host field to the bare address.
+
+    `tracert` runs without `-d`, so a resolved hop reads `name [1.2.3.4]` rather
+    than a bare IP. Keeping the composite broke two things: it does not match the
+    Linux/macOS parsers (which yield a bare address), and the redaction pass in
+    `bundle` classifies addresses with `ipaddress.ip_address`, which cannot parse
+    a composite — so a resolved public hop slipped through `--scrub` untouched,
+    PTR name and all. The PTR itself is worth dropping regardless: an ISP CPE name
+    usually encodes the subscriber's address and region.
+    """
+    m = _WIN_HOP_BRACKET_IP_RE.search(field)
+    return m.group(1) if m else field
+
+
 def _parse_tracert_win(stdout: str) -> list[dict]:
     """Parse Windows tracert stdout. Each hop dict: index, loss_pct, rtt_ms, host."""
     hops = []
@@ -86,7 +104,7 @@ def _parse_tracert_win(stdout: str) -> list[dict]:
         loss_pct = (star_count / 3) * 100.0
         present = [r for r in rtts if r is not None]
         rtt_ms = sum(present) / len(present) if present else None
-        host = "*" if star_count == 3 else m.group(5).strip()
+        host = "*" if star_count == 3 else _win_hop_host(m.group(5).strip())
         hops.append({"index": index, "loss_pct": loss_pct, "rtt_ms": rtt_ms, "host": host})
     return hops
 

@@ -143,3 +143,23 @@ def test_ipv6_route_win_absent():
 def test_ipv6_route_win_no_default_entry():
     text = "  fe80::/64              256  On-link\n"
     assert _parse_ipv6_route_present_win(text) is False
+
+
+def test_win_hop_with_reverse_dns_yields_the_bare_ip():
+    """`tracert` runs without -d, so a resolved hop reads `name [ip]`.
+
+    Keeping the composite diverged from the Linux/macOS parsers and defeated the
+    redaction pass, which classifies addresses with `ipaddress.ip_address` and
+    cannot parse `name [ip]` — so a resolved public hop survived --scrub intact.
+    """
+    from boundary_probe.collectors._parsers import _parse_tracert_win
+
+    stdout = (
+        "\nTracing route to one.one.one.one [1.1.1.1]\n"
+        "over a maximum of 10 hops:\n\n"
+        "  1     2 ms     2 ms     2 ms  192.168.1.1\n"
+        "  2    11 ms    10 ms    11 ms  cpe-72-14-205-1.socal.res.rr.com [72.14.205.1]\n"
+        "  3    12 ms    11 ms    12 ms  1.1.1.1\n\nTrace complete.\n"
+    )
+    hops = _parse_tracert_win(stdout)
+    assert [h["host"] for h in hops] == ["192.168.1.1", "72.14.205.1", "1.1.1.1"]

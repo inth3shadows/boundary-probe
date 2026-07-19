@@ -275,3 +275,28 @@ class TestUICLI:
                 sys.stdout = sys.__stdout__
         assert exc.value.code == 0
         assert "--port" in buf.getvalue()
+
+
+class TestMailtoSubject:
+    """The mail body is the escalation report, so the subject must not
+    contradict its title (#22)."""
+
+    def test_dns_subject_is_not_local_incident(self):
+        from boundary_probe.ui.templates import _mailto_subject
+
+        subj = _mailto_subject("dns", "example.com")
+        assert "DNS" in urllib.parse.unquote(subj)
+        assert "Local Network Incident" not in urllib.parse.unquote(subj)
+
+    def test_captive_portal_subject_is_not_local_incident(self):
+        from boundary_probe.ui.templates import _mailto_subject
+
+        subj = urllib.parse.unquote(_mailto_subject("captive-portal", "example.com"))
+        assert "Captive Portal" in subj
+        assert "Local Network Incident" not in subj
+
+    def test_router_gateway_keeps_local_incident_subject(self):
+        from boundary_probe.ui.templates import _mailto_subject
+
+        subj = urllib.parse.unquote(_mailto_subject("router-gateway", "example.com"))
+        assert subj == "Local Network Incident Report"

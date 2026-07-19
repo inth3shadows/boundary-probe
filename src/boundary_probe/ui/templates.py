@@ -157,10 +157,17 @@ def render_history(rows: list) -> str:
 
 
 def _mailto_subject(boundary: str, target_host: str) -> str:
+    # Must track the escalation titles in templates/__init__.py: the mail body is
+    # that report, so a subject saying "Local Network Incident" over a DNS or
+    # captive-portal report re-introduces the mislabel those titles fixed.
     if boundary == "isp-upstream":
         return urllib.parse.quote("Network Issue: Suspected ISP Upstream Problem", safe="")
     if boundary == "remote-service":
         return urllib.parse.quote(f"Service Availability Issue: {target_host}", safe="")
+    if boundary == "dns":
+        return urllib.parse.quote("Network Issue: DNS Resolution Failure", safe="")
+    if boundary == "captive-portal":
+        return urllib.parse.quote("Network Issue: Captive Portal Interception", safe="")
     return urllib.parse.quote("Local Network Incident Report", safe="")
 
 

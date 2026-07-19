@@ -30,6 +30,31 @@ def render_escalation(row: sqlite3.Row) -> str:
             "affecting multiple independent targets simultaneously.\n"
             "I am requesting a line quality check and path investigation."
         )
+    elif boundary == "captive-portal":
+        # A portal is usually somebody else's network (hotel, airport, café), so
+        # the local-incident title mislabels it — and the report is a sign-in
+        # prompt for the user, not something to forward to an ISP or IT desk.
+        title = "CAPTIVE PORTAL INTERCEPTION REPORT"
+        action = (
+            "A captive portal is intercepting traffic on this network — sign-in or\n"
+            "acceptance is required before real internet traffic will pass.\n"
+            "Open any http:// page in a browser to trigger the portal, then log in or\n"
+            "re-authenticate if a previous session expired. On a network you control,\n"
+            "check instead for an interception or parental-control proxy.\n"
+            "Note that DNS may look healthy below because the portal answers it."
+        )
+    elif boundary == "dns":
+        # DNS is not necessarily a *local* incident: the configured resolver may
+        # be a public one (1.1.1.1 / 8.8.8.8) or the ISP's. Titling it as a local
+        # network incident would mislabel the report for whoever receives it.
+        title = "DNS RESOLUTION FAILURE REPORT"
+        action = (
+            "Name resolution is failing while raw IP connectivity still works.\n"
+            "Please check the resolver configured for this connection — both the\n"
+            "local setting (router/DHCP or OS DNS servers) and the upstream resolver\n"
+            "it points at, which may be an ISP or public resolver outside my network.\n"
+            "The resolved-address list and lookup timing below show what was attempted."
+        )
     elif boundary == "remote-service":
         host = row["target_host"]
         title = "SERVICE PROVIDER ESCALATION REPORT"

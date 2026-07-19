@@ -1,0 +1,153 @@
+{
+  "scenario": "healthy-real-wsl-home-20260719-102507",
+  "captured_at": "2026-07-19T14:25:32Z",
+  "capture_method": "real",
+  "target": "example.com",
+  "signals": {
+    "gateway_reachable": true,
+    "dns_ok": true,
+    "ip_connectivity_ok": true,
+    "control_hosts_ok": true,
+    "target_service_ok": true,
+    "default_route_present": true,
+    "packet_loss_after_hop1": false,
+    "packet_loss_multiple_targets": false,
+    "captive_portal_detected": false,
+    "ipv6_default_route_present": false
+  },
+  "measurements": {
+    "gateway": {
+      "reachable": true,
+      "gateway_ip": "192.168.9.1",
+      "rtt_ms": 1.304,
+      "note": ""
+    },
+    "dns": {
+      "ok": true,
+      "resolved_ips": [
+        "172.66.147.243",
+        "104.20.23.154"
+      ],
+      "resolver_used": null,
+      "elapsed_ms": 54,
+      "note": ""
+    },
+    "ip_connectivity": {
+      "ok": true,
+      "target_ip": "1.1.1.1",
+      "loss_pct": 0.0,
+      "avg_rtt_ms": 18.734,
+      "note": ""
+    },
+    "control_hosts": {
+      "all_ok": true,
+      "ok_count": 4,
+      "total": 4,
+      "results": [
+        {
+          "host": "1.1.1.1",
+          "reachable": true,
+          "loss_pct": 0.0,
+          "avg_rtt_ms": 18.303
+        },
+        {
+          "host": "8.8.8.8",
+          "reachable": true,
+          "loss_pct": 0.0,
+          "avg_rtt_ms": 16.261
+        },
+        {
+          "host": "8.8.4.4",
+          "reachable": true,
+          "loss_pct": 0.0,
+          "avg_rtt_ms": 22.625
+        },
+        {
+          "host": "cloudflare.com",
+          "reachable": true,
+          "loss_pct": 0.0,
+          "avg_rtt_ms": 18.918
+        }
+      ],
+      "note": ""
+    },
+    "target_service": {
+      "ok": true,
+      "method": "ping",
+      "target_host": "example.com",
+      "target_port": null,
+      "elapsed_ms": 3073,
+      "note": "",
+      "http_status": null
+    },
+    "path_primary": {
+      "raw_hops": [
+        {
+          "index": 1,
+          "loss_pct": 0.0,
+          "rtt_ms": 1.1166666666666665,
+          "host": "192.168.9.1"
+        },
+        {
+          "index": 2,
+          "loss_pct": 0.0,
+          "rtt_ms": 2.7283333333333335,
+          "host": "100.65.34.1"
+        },
+        {
+          "index": 3,
+          "loss_pct": 0.0,
+          "rtt_ms": 2.964,
+          "host": "100.65.30.1"
+        },
+        {
+          "index": 4,
+          "loss_pct": 0.0,
+          "rtt_ms": 3.3989999999999996,
+          "host": "10.255.2.29"
+        },
+        {
+          "index": 5,
+          "loss_pct": 0.0,
+          "rtt_ms": 3.6486666666666667,
+          "host": "100.65.0.19"
+        },
+        {
+          "index": 6,
+          "loss_pct": 0.0,
+          "rtt_ms": 3.965,
+          "host": "<scrubbed-public-ip>"
+        },
+        {
+          "index": 7,
+          "loss_pct": 0.0,
+          "rtt_ms": 4.693333333333333,
+          "host": "<scrubbed-public-ip>"
+        },
+        {
+          "index": 8,
+          "loss_pct": 0.0,
+          "rtt_ms": 18.816,
+          "host": "<scrubbed-public-ip>"
+        },
+        {
+          "index": 9,
+          "loss_pct": 0.0,
+          "rtt_ms": 22.676666666666666,
+          "host": "<scrubbed-public-ip>"
+        },
+        {
+          "index": 10,
+          "loss_pct": 0.0,
+          "rtt_ms": 21.264333333333337,
+          "host": "<scrubbed-public-ip>"
+        }
+      ],
+      "target": "example.com",
+      "completed": true,
+      "note": ""
+    },
+    "path_secondary": null
+  },
+  "expected_boundary": "healthy"
+}

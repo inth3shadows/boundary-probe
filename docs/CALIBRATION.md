@@ -24,6 +24,30 @@ however is safe in your environment (suggestions in parentheses).
 | `service-down` | remote-service | target a service that is down while internet is healthy |
 | `healthy` | healthy | a normal, working connection |
 
+Use the helper rather than the raw command — an outage is a bad moment to be
+recalling flags, and a bare `capture <name>` silently overwrites a fixture of the
+same name, destroying the previous data point:
+
+```
+scripts/capture_real.sh --status                       # what is still needed
+scripts/capture_real.sh dns --label home               # capture one
+scripts/capture_real.sh isp-upstream --label cafe
+```
+
+It names the fixture uniquely (`<boundary>-real-<label>-<timestamp>`), stamps
+`--expected-boundary` and `--capture-method real` (the two flags that decide
+which cohort `calibrate.py` counts it in), and afterwards reports whether the
+engine agreed with your label and how far the boundary still is from n=10.
+
+**A capture where the engine disagreed with you is the most valuable fixture in
+the set** — keep it. It is a labeled misclassification, which is what recall is
+computed from; a set containing only agreements cannot measure accuracy.
+
+The `--label` matters: network diversity is what makes the real cohort worth more
+than the injected one. Ten captures from one router mostly measure that router.
+
+The equivalent raw command, if you need it:
+
 ```
 boundary-probe capture <name> --target <a-real-target> \
     --expected-boundary <true-boundary> --capture-method real
@@ -56,15 +80,22 @@ injected-only fixtures.
 **Sweep the path-loss threshold.** The `isp-loss` scenario defaults to 50% loss,
 which sits far above the 20% `path_loss_pct` threshold and so never tests it.
 Override the loss (an integer 1–100) to land in the ambiguous band (10–30%) the
-measurement pass flags. Each run writes the **same** `tests/fixtures/isp-loss.json`
-(the scenario name must stay `isp-loss` — it keys the ground-truth map), so
-**rename after each capture** to keep several:
+measurement pass flags. The `sweep` command does the whole band in one go:
+
+```
+sudo scripts/inject_fault.sh sweep              # 10 15 20 25 30 -> isp-loss-<pct>.json
+sudo scripts/inject_fault.sh sweep 12 18 22     # or pick your own points
+```
+
+Each run writes the **same** `tests/fixtures/isp-loss.json` (the scenario name
+must stay `isp-loss` — it keys the ground-truth map), so `sweep` renames each
+result to `isp-loss-<pct>.json` before starting the next. Doing this by hand
+means a `mv` between every capture, and forgetting one silently destroys the
+previous data point:
 
 ```
 sudo BP_ISP_LOSS_PCT=15 scripts/inject_fault.sh capture isp-loss
 mv tests/fixtures/isp-loss.json tests/fixtures/isp-loss-15.json
-sudo BP_ISP_LOSS_PCT=22 scripts/inject_fault.sh capture isp-loss
-mv tests/fixtures/isp-loss.json tests/fixtures/isp-loss-22.json
 ```
 
 A 22% capture is exactly the case `calibrate.py`'s measurement pass calls

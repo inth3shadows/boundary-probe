@@ -91,9 +91,14 @@ reading as "threshold well-placed" when it meant "threshold unmeasurable". Both
 the instruction and the band have been removed. The measurement pass now prints
 the instrument's real resolution instead.
 
-Collecting more fixtures will not calibrate this threshold. See #41 for the
-options (more probes per hop, keying the verdict on ping loss instead, or
-documenting the real semantics).
+**The verdict now keys on ping loss instead, and that IS calibratable.** The
+`isp-upstream` signals are derived from `remote_loss_pct` over the canary and the
+control hosts — `ping -c 10` per target across ~5 independent destinations, so
+loss resolves to ~10pp per target and ~2pp aggregated, and it measures the data
+plane rather than rate-limited ICMP generation. Sweeping `BP_ISP_LOSS_PCT` DOES
+produce distinguishable values here, and the measurement pass reports which
+captures land within 10pp of the threshold. Those are the calibration data
+points. Hop loss is retained as corroboration only, recorded on the path note.
 
 ### 1b. Scrub (public repo)
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import time
 from dataclasses import dataclass
 
@@ -14,7 +15,7 @@ from boundary_probe.collectors.path import PathSlice, collect_path
 from boundary_probe.collectors.target_service import TargetServiceSlice, collect_target_service
 from boundary_probe.config import load_config
 from boundary_probe.models import SignalSnapshot
-from boundary_probe.normalizer import normalize_from_paths
+from boundary_probe.normalizer import normalize_from_paths, normalize_from_pings
 from boundary_probe.targets import ParsedTarget
 
 
@@ -73,7 +74,23 @@ def collect_signals(
         needs_secondary = not ip.ok or not controls.all_ok
         path_secondary = collect_path(secondary_target, r, cfg=cfg) if needs_secondary else None
 
+    # Hop-derived loss is still computed, but only as corroborating evidence in
+    # the report — see normalize_from_pings for why it is not load-bearing. It is
+    # recorded on the path note so a reader can see whether the trace agreed with
+    # the ping-based verdict, which is useful precisely when the two differ.
     path_signals = normalize_from_paths(path_primary, path_secondary, cfg=cfg)
+    if path_signals.packet_loss_after_hop1:
+        corroboration = "traceroute also shows loss persisting past hop 1 (corroborating, not decisive)"
+        path_primary = dataclasses.replace(
+            path_primary,
+            note=f"{path_primary.note}; {corroboration}".lstrip("; "),
+        )
+    loss_signals = normalize_from_pings(
+        gateway.reachable,
+        ip.loss_pct,
+        [r.loss_pct for r in controls.results],
+        remote_loss_pct=cfg.remote_loss_pct,
+    )
 
     snapshot = SignalSnapshot(
         gateway_reachable=gateway.reachable,
@@ -84,8 +101,8 @@ def collect_signals(
         # No gateway IP in the route table => no default route => local-device fault,
         # not a router that simply failed to answer a ping.
         default_route_present=gateway.gateway_ip is not None,
-        packet_loss_after_hop1=path_signals.packet_loss_after_hop1,
-        packet_loss_multiple_targets=path_signals.packet_loss_multiple_targets,
+        packet_loss_after_hop1=loss_signals.packet_loss_after_hop1,
+        packet_loss_multiple_targets=loss_signals.packet_loss_multiple_targets,
         captive_portal_detected=captive.portal_detected,
         ipv6_default_route_present=ipv6_route.present,
     )

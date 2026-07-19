@@ -20,7 +20,16 @@ class ProbeConfig:
     target_tls_verify: bool = True
 
     # [thresholds]
+    # Per-hop traceroute loss. Corroborating evidence only: traceroute sends 3
+    # probes per hop, so this resolves to {0, 33.3, 66.7, 100} and it measures
+    # ICMP TTL-expired generation on a rate-limited control plane rather than
+    # forwarding. It cannot be calibrated (issue #41) and no verdict keys on it.
     path_loss_pct: float = 20.0
+    # Loss to an independent remote destination (canary + control hosts), from
+    # `ping -c 10` per target. This is what the isp-upstream verdict keys on: it
+    # measures the data plane the user actually cares about, resolves to 10pp per
+    # target and ~2pp aggregated over 5 targets, and so can be calibrated.
+    remote_loss_pct: float = 20.0
     control_loss_pct: float = 50.0
     ip_loss_pct: float = 50.0
     gateway_min_replies: int = 2
@@ -91,6 +100,7 @@ def _validate(cfg: ProbeConfig) -> None:
 
     for name, val in (
         ("path_loss_pct", cfg.path_loss_pct),
+        ("remote_loss_pct", cfg.remote_loss_pct),
         ("control_loss_pct", cfg.control_loss_pct),
         ("ip_loss_pct", cfg.ip_loss_pct),
     ):
@@ -177,6 +187,7 @@ def load_config() -> ProbeConfig:
             control_quorum=int(probes.get("control_quorum", _DEFAULTS.control_quorum)),
             target_tls_verify=raw_tls,
             path_loss_pct=float(thresholds.get("path_loss_pct", _DEFAULTS.path_loss_pct)),
+            remote_loss_pct=float(thresholds.get("remote_loss_pct", _DEFAULTS.remote_loss_pct)),
             control_loss_pct=float(thresholds.get("control_loss_pct", _DEFAULTS.control_loss_pct)),
             ip_loss_pct=float(thresholds.get("ip_loss_pct", _DEFAULTS.ip_loss_pct)),
             gateway_min_replies=int(thresholds.get("gateway_min_replies", _DEFAULTS.gateway_min_replies)),

@@ -215,4 +215,7 @@ def test_measurement_pass_reports_the_thresholds_real_resolution(monkeypatch, tm
     assert ">= 1 of 3 probes lost" in out
     # The hand-written 22.0% hop still counts as over-threshold; it is simply not
     # a value any real capture can yield.
-    assert "over-threshold=1" in out
+    assert "hop-loss>thr=1" in out
+    # And the pass now reports the threshold that CAN be calibrated: ping loss to
+    # independent destinations, which is what the isp-upstream verdict keys on.
+    assert "remote-loss threshold" in out

@@ -227,7 +227,25 @@ def _print_boolean_pass(
     return warnings
 
 
-def _print_measurement_pass(files: list[Path], threshold: float) -> None:
+def _remote_losses(measurements: dict) -> list[float]:
+    """Per-destination ping loss: the canary plus every control host.
+
+    Unlike hop loss these are real sent/received counts over 10 probes each, so
+    they can land near a threshold and actually calibrate it.
+    """
+    out: list[float] = []
+    ip = measurements.get("ip_connectivity") or {}
+    if isinstance(ip.get("loss_pct"), (int, float)):
+        out.append(float(ip["loss_pct"]))
+    ctrl = measurements.get("control_hosts") or {}
+    results = ctrl.get("results") if isinstance(ctrl, dict) else None
+    for r in results or []:
+        if isinstance(r, dict) and isinstance(r.get("loss_pct"), (int, float)):
+            out.append(float(r["loss_pct"]))
+    return out
+
+
+def _print_measurement_pass(files: list[Path], threshold: float, remote_threshold: float) -> None:
     step = 100.0 / _TRACEROUTE_PROBES
     resolvable = sorted({round(i * step, 2) for i in range(_TRACEROUTE_PROBES + 1)})
     effective = sum(1 for v in resolvable if v > threshold)
@@ -239,6 +257,10 @@ def _print_measurement_pass(files: list[Path], threshold: float) -> None:
           f"of {_TRACEROUTE_PROBES} probes lost'; any value in "
           f"({resolvable[-effective - 1] if effective < len(resolvable) else 0}, "
           f"{resolvable[-effective]:.2f}] behaves identically. See issue #41.")
+    print(f"  remote-loss threshold = {remote_threshold:.1f}% (canary + control hosts,")
+    print("    10 probes per target across ~5 independent destinations => ~10pp per")
+    print("    target, ~2pp aggregated. THIS is what the isp-upstream verdict keys")
+    print("    on, and the threshold worth calibrating against real captures.")
     print("  RTT and hop-count have no engine threshold — shown as context only.")
     print()
     any_rows = False
@@ -272,9 +294,15 @@ def _print_measurement_pass(files: list[Path], threshold: float) -> None:
         hop_n = len(path.get("raw_hops") or [])
         ctrl_s = f"{ctrl.get('ok_count', '?')}/{ctrl.get('total', '?')}"
 
+        remote = _remote_losses(measurements)
+        near = [l for l in remote if abs(l - remote_threshold) <= 10.0]
         print(f"  {f.stem:<24} consistency={consistency:<8} "
-              f"lossy-hops={len(hops):<2} over-threshold={len(over):<2} "
+              f"hop-loss>thr={len(over):<2} remote-loss>thr="
+              f"{sum(1 for l in remote if l > remote_threshold):<2} near-thr={len(near):<2} "
               f"[gw {gw_rtt_s}, hops {hop_n}, ctrl {ctrl_s}]")
+        for l in near:
+            print(f"      ~ remote target at {l:.1f}% loss is within 10pp of the "
+                  f"{remote_threshold:.0f}% threshold — this is a calibration data point")
         for sig in mismatches:
             print(f"      ! {sig}")
     if not any_rows:
@@ -394,8 +422,8 @@ def main(argv: list[str]) -> int:
     correct, total, per_truth = _accuracy(files)
     _print_accuracy(correct, total, per_truth)
 
-    threshold = load_config().path_loss_pct
-    _print_measurement_pass(files, threshold)
+    cfg = load_config()
+    _print_measurement_pass(files, cfg.path_loss_pct, cfg.remote_loss_pct)
     return 0
 
 

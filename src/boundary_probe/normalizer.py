@@ -126,3 +126,45 @@ def normalize_from_paths(
     # Reuse the orchestrator's already-loaded config when provided, else load.
     threshold = cfg.path_loss_pct if cfg is not None else load_config().path_loss_pct
     return normalize_path_signals(primary.raw_hops, secondary_hops, path_loss_pct=threshold)
+
+
+def normalize_from_pings(
+    gateway_reachable: bool,
+    canary_loss_pct: float | None,
+    control_losses: list[float],
+    *,
+    remote_loss_pct: float | None = None,
+) -> PathSignals:
+    """Derive the isp-upstream loss signals from ping loss, not traceroute hops.
+
+    This is the load-bearing path. It replaced hop-derived signals because the two
+    measurements are not equivalent in either resolution or meaning:
+
+    * Resolution. traceroute sends 3 probes per hop, so a hop's loss is one of
+      {0, 33.3, 66.7, 100} — coarser than any threshold worth setting, and the
+      reason the threshold could never be calibrated (issue #41). Each ping here
+      sends 10, across 5 independent destinations (canary + control hosts), so
+      loss resolves to 10pp per target and roughly 2pp aggregated.
+    * Meaning. A traceroute hop reports whether a router *generated* an ICMP
+      TTL-expired reply, which routers commonly rate-limit on the control plane
+      while forwarding traffic normally. An echo reply reports whether the data
+      plane actually carried the packet — the thing the user is complaining about.
+
+    ``packet_loss_after_hop1`` means loss that begins beyond the first hop: the
+    gateway answers, but independent remote destinations do not. ``packet_loss_
+    multiple_targets`` requires at least two independent destinations, so one dead
+    remote host cannot alone produce an ISP verdict.
+    """
+    threshold = remote_loss_pct if remote_loss_pct is not None else load_config().remote_loss_pct
+
+    losses = [l for l in ([canary_loss_pct] + list(control_losses)) if l is not None]
+    lossy = [l for l in losses if l > threshold]
+
+    # Without a working gateway the fault is at or below hop 1, and any remote
+    # loss is a downstream consequence — attributing it upstream would blame the
+    # ISP for a dead router. The router-gateway / local-device rules own that case.
+    after_hop1 = bool(gateway_reachable and lossy)
+    return PathSignals(
+        packet_loss_after_hop1=after_hop1,
+        packet_loss_multiple_targets=after_hop1 and len(lossy) >= 2,
+    )

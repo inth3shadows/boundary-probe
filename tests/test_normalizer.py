@@ -159,3 +159,56 @@ def test_ipv6_hop_raises():
     ]
     with pytest.raises(ValueError, match="IPv6 hop"):
         normalize_path_signals(hops)
+
+
+class TestPingDerivedLossSignals:
+    """The isp-upstream signals key on ping loss, not traceroute hop loss.
+
+    Hop loss resolves to {0, 33.3, 66.7, 100} at 3 probes and reports ICMP
+    generation on a rate-limited control plane; these pings send 10 per target
+    across independent destinations and report the data plane (issue #41).
+    """
+
+    def _n(self, gw, canary, controls, threshold=20.0):
+        from boundary_probe.normalizer import normalize_from_pings
+        return normalize_from_pings(gw, canary, controls, remote_loss_pct=threshold)
+
+    def test_partial_loss_on_two_targets_is_isp_shaped(self):
+        # 30% and 40% are values hop-loss could never report; this is the case
+        # the old traceroute-derived signal was blind to.
+        sig = self._n(True, 30.0, [40.0, 0.0, 0.0, 0.0])
+        assert sig.packet_loss_after_hop1 is True
+        assert sig.packet_loss_multiple_targets is True
+
+    def test_one_lossy_target_is_not_enough_for_breadth(self):
+        # A single degraded destination is that destination's problem.
+        sig = self._n(True, 0.0, [40.0, 0.0, 0.0, 0.0])
+        assert sig.packet_loss_after_hop1 is True
+        assert sig.packet_loss_multiple_targets is False
+
+    def test_dead_gateway_never_reads_as_upstream_loss(self):
+        # Loss with a dead gateway is downstream of a local fault; blaming the
+        # ISP here is the misdiagnosis this guard exists to prevent.
+        sig = self._n(False, 100.0, [100.0, 100.0, 100.0, 100.0])
+        assert sig.packet_loss_after_hop1 is False
+        assert sig.packet_loss_multiple_targets is False
+
+    def test_clean_network_produces_no_loss_signals(self):
+        sig = self._n(True, 0.0, [0.0, 0.0, 0.0, 0.0])
+        assert sig.packet_loss_after_hop1 is False
+        assert sig.packet_loss_multiple_targets is False
+
+    def test_loss_at_or_below_threshold_does_not_fire(self):
+        # Strictly greater-than: 20% loss with a 20% threshold is not "over".
+        sig = self._n(True, 20.0, [20.0, 20.0, 20.0, 20.0])
+        assert sig.packet_loss_after_hop1 is False
+
+    def test_threshold_resolves_ten_point_steps(self):
+        # The point of the re-key: a 10pp change in one target flips the verdict,
+        # which is impossible with 3-probe hop loss.
+        assert self._n(True, 10.0, [10.0], threshold=15.0).packet_loss_after_hop1 is False
+        assert self._n(True, 20.0, [20.0], threshold=15.0).packet_loss_after_hop1 is True
+
+    def test_missing_canary_measurement_is_ignored_not_counted(self):
+        sig = self._n(True, None, [40.0, 40.0])
+        assert sig.packet_loss_multiple_targets is True

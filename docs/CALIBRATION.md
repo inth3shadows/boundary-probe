@@ -77,30 +77,23 @@ substitute for real captures on the high-harm boundaries. `calibrate.py` keeps
 the cohorts apart (see §3) and warns when a high-harm prior is backed by
 injected-only fixtures.
 
-**Sweep the path-loss threshold.** The `isp-loss` scenario defaults to 50% loss,
-which sits far above the 20% `path_loss_pct` threshold and so never tests it.
-Override the loss (an integer 1–100) to land in the ambiguous band (10–30%) the
-measurement pass flags. The `sweep` command does the whole band in one go:
+**The path-loss threshold cannot be field-tested (issue #41).** The `isp-loss`
+scenario's netem rate is overridable (`BP_ISP_LOSS_PCT=22`), but do **not** expect
+the captured per-hop loss to match it. `traceroute` sends 3 probes per hop, so a
+hop's measured loss is always one of `{0, 33.33, 66.67, 100}%`. The engine's 20%
+threshold therefore means "at least 1 of 3 probes lost", and any configured value
+in `(0, 33.33]` behaves identically.
 
-```
-sudo scripts/inject_fault.sh sweep              # 10 15 20 25 30 -> isp-loss-<pct>.json
-sudo scripts/inject_fault.sh sweep 12 18 22     # or pick your own points
-```
+An earlier version of this document told you to sweep the rate to land in a
+"[10, 30]% ambiguous band" that `calibrate.py` flagged. That band does not
+intersect the set of measurable values, so it reported zero for every capture —
+reading as "threshold well-placed" when it meant "threshold unmeasurable". Both
+the instruction and the band have been removed. The measurement pass now prints
+the instrument's real resolution instead.
 
-Each run writes the **same** `tests/fixtures/isp-loss.json` (the scenario name
-must stay `isp-loss` — it keys the ground-truth map), so `sweep` renames each
-result to `isp-loss-<pct>.json` before starting the next. Doing this by hand
-means a `mv` between every capture, and forgetting one silently destroys the
-previous data point:
-
-```
-sudo BP_ISP_LOSS_PCT=15 scripts/inject_fault.sh capture isp-loss
-mv tests/fixtures/isp-loss.json tests/fixtures/isp-loss-15.json
-```
-
-A 22% capture is exactly the case `calibrate.py`'s measurement pass calls
-*ambiguous* — these are where the threshold earns or loses trust. Still
-injected (synthetic shape); they widen threshold coverage, not the real cohort.
+Collecting more fixtures will not calibrate this threshold. See #41 for the
+options (more probes per hop, keying the verdict on ping loss instead, or
+documenting the real semantics).
 
 ### 1b. Scrub (public repo)
 
@@ -152,10 +145,11 @@ carrying a `measurements` block the harness:
 - **recomputes the core booleans** from the raw measurements and flags any
   `MISMATCH` with the stored signal — a capture-pipeline bug, not a calibration
   signal, but the highest-value thing this pass can find;
-- **reports path-loss hops** and flags any whose loss% lands within ±10pp of the
-  threshold (the "ambiguous band", 10–30%) — that is where a real capture would
-  first expose a mis-set threshold. Injected `netem` loss clears the bar cleanly
-  (e.g. 33%) and so never lands here, which is exactly why real captures matter.
+- **reports path-loss hops**, how many sit over the threshold, and — the point of
+  the section — the set of loss values the instrument can actually produce. With
+  3 probes per hop that set is `{0, 33.33, 66.67, 100}`, so the configured 20%
+  threshold is really "≥1 of 3 probes lost" and no capture can land near it.
+  This replaces an earlier "ambiguous band" flag that could never fire (#41).
 
 RTT and hop counts have **no** engine threshold and are shown as context only —
 inventing a cutoff the engine does not use would fabricate calibration.

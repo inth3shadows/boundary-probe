@@ -54,11 +54,14 @@ _KNOWN_SCENARIOS = {
 # trustworthy — calibration warns rather than letting a convincing table mislead.
 _HIGH_HARM = {"router-gateway", "isp-upstream"}
 
-# Half-width of the "ambiguous" band around the path-loss threshold. A captured
-# hop whose loss% lands within this margin of the threshold is where a real
-# capture would first expose a mis-set threshold; injected netem loss clears the
-# bar cleanly and so never lands here.
-_AMBIGUOUS_MARGIN_PP = 10.0
+# traceroute sends a fixed number of probes per hop, so a hop's measured loss is
+# quantized to multiples of 100/_TRACEROUTE_PROBES. This is the resolution of the
+# instrument, and it is coarser than the threshold it feeds — see issue #41. An
+# earlier version of this pass flagged hops within +/-10pp of the threshold as
+# "ambiguous"; that band is unreachable at 3 probes ([10,30] never intersects
+# {0, 33.3, 66.7, 100}), so it reported 0 for every capture and read as
+# "threshold well-placed" when it meant "cannot be measured".
+_TRACEROUTE_PROBES = 3
 
 # Map each core boolean signal to where it lives in the raw measurements, so the
 # measurement pass can re-derive it and assert it matches what was stored. A
@@ -136,9 +139,10 @@ def _recompute_core_booleans(measurements: dict) -> dict[str, bool]:
 def _path_loss_hops(measurements: dict, threshold: float) -> list[tuple[int, float, float]]:
     """Return (hop_index, loss_pct, margin) for every hop with non-zero loss.
 
-    ``margin`` is ``loss_pct - threshold``; a hop within +/- the ambiguous band
-    of zero margin is where a real capture would first expose a mis-set
-    threshold.
+    ``margin`` is ``loss_pct - threshold`` — how far the hop sits from the
+    decision boundary. With only 3 probes per hop the margin is one of a handful
+    of fixed values, so read it as "which side, and by how much", not as a
+    precise distance.
     """
     path = measurements.get("path_primary") or {}
     hops = path.get("raw_hops") or []
@@ -224,13 +228,18 @@ def _print_boolean_pass(
 
 
 def _print_measurement_pass(files: list[Path], threshold: float) -> None:
-    lo = threshold - _AMBIGUOUS_MARGIN_PP
-    hi = threshold + _AMBIGUOUS_MARGIN_PP
+    step = 100.0 / _TRACEROUTE_PROBES
+    resolvable = sorted({round(i * step, 2) for i in range(_TRACEROUTE_PROBES + 1)})
+    effective = sum(1 for v in resolvable if v > threshold)
     print()
     print("Measurement-layer calibration (raw measurements vs engine thresholds)")
-    print(f"  path-loss threshold = {threshold:.1f}%  |  "
-          f"ambiguous band = [{lo:.1f}, {hi:.1f}]%")
-    print(f"  RTT and hop-count have no engine threshold — shown as context only.")
+    print(f"  path-loss threshold = {threshold:.1f}%")
+    print(f"  measurable hop-loss values = {resolvable} ({_TRACEROUTE_PROBES} probes/hop)")
+    print(f"  => the threshold is in effect '>= {_TRACEROUTE_PROBES - effective + 1} "
+          f"of {_TRACEROUTE_PROBES} probes lost'; any value in "
+          f"({resolvable[-effective - 1] if effective < len(resolvable) else 0}, "
+          f"{resolvable[-effective]:.2f}] behaves identically. See issue #41.")
+    print("  RTT and hop-count have no engine threshold — shown as context only.")
     print()
     any_rows = False
     for f in files:
@@ -252,7 +261,7 @@ def _print_measurement_pass(files: list[Path], threshold: float) -> None:
 
         # Path-loss margins.
         hops = _path_loss_hops(measurements, threshold)
-        ambiguous = [(i, loss) for (i, loss, _m) in hops if lo <= loss <= hi]
+        over = [(i, loss) for (i, loss, m) in hops if m > 0]
 
         # FYI context (no threshold).
         gw = measurements.get("gateway") or {}
@@ -264,20 +273,18 @@ def _print_measurement_pass(files: list[Path], threshold: float) -> None:
         ctrl_s = f"{ctrl.get('ok_count', '?')}/{ctrl.get('total', '?')}"
 
         print(f"  {f.stem:<24} consistency={consistency:<8} "
-              f"lossy-hops={len(hops):<2} ambiguous={len(ambiguous):<2} "
+              f"lossy-hops={len(hops):<2} over-threshold={len(over):<2} "
               f"[gw {gw_rtt_s}, hops {hop_n}, ctrl {ctrl_s}]")
         for sig in mismatches:
             print(f"      ! {sig}")
-        for idx, loss in ambiguous:
-            print(f"      ~ hop {idx}: {loss:.1f}% loss is within the ambiguous "
-                  f"band — a real capture here would test the threshold")
     if not any_rows:
         print("  (no fixtures carry a 'measurements' block)")
     print()
     print("A consistency MISMATCH means the stored boolean disagrees with the raw "
-          "measurement — a capture-pipeline bug, not a calibration signal. "
-          f"Ambiguous hops are where the {threshold:.0f}% threshold is worth "
-          "field-testing.")
+          "measurement — a capture-pipeline bug, and the highest-value thing this "
+          "pass finds. The path-loss threshold itself cannot be field-tested at "
+          "this probe count (issue #41): no capture can produce a hop-loss value "
+          "near it, so collecting more fixtures will not calibrate it.")
 
 
 def _accuracy(files: list[Path]) -> tuple[int, int, dict[str, dict]]:
@@ -339,12 +346,44 @@ def _print_accuracy(correct: int, total: int, per_truth: dict[str, dict]) -> Non
           "the real cohort is large (see the cohort warning above).")
 
 
+def cohort_counts(files: list[Path]) -> dict[str, dict[str, int]]:
+    """Real/injected/synthetic counts keyed by GROUND-TRUTH boundary.
+
+    Deliberately a different axis from the table `_print_boolean_pass` shows,
+    which keys on the *predicted* boundary because it is scoring the classifier.
+    For "how many real captures of boundary X do I still owe?", truth is the
+    right key — a real router-gateway outage the engine misread is still a real
+    router-gateway capture. Exposed so `scripts/capture_real.sh` can report
+    progress without keeping its own copy of `_cohort`, which drifted from this
+    one the moment it was written.
+    """
+    counts: dict[str, dict[str, int]] = defaultdict(
+        lambda: {"real": 0, "synthetic": 0, "injected": 0}
+    )
+    for f in files:
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        truth = _ground_truth(f.stem, data)
+        if truth is None:
+            continue
+        counts[truth][_cohort(f.stem, data)] += 1
+    return dict(counts)
+
+
 def main(argv: list[str]) -> int:
-    fixtures_dir = Path(argv[1]) if len(argv) > 1 else Path("tests/fixtures")
+    args = [a for a in argv[1:] if a != "--cohorts-json"]
+    fixtures_dir = Path(args[0]) if args else Path("tests/fixtures")
     files = sorted(fixtures_dir.glob("*.json"))
     if not files:
         print(f"no fixtures found in {fixtures_dir}", file=sys.stderr)
         return 1
+
+    if "--cohorts-json" in argv[1:]:
+        # Machine-readable, truth-keyed. Consumed by scripts/capture_real.sh.
+        print(json.dumps(cohort_counts(files), sort_keys=True))
+        return 0
 
     hardcoded = _hardcoded_confidences()
     tally, cohorts, unlabeled = _boolean_pass(files)

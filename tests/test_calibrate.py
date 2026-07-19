@@ -176,11 +176,14 @@ def test_accuracy_surfaces_misclassification(tmp_path, capsys):
     assert "misclassification" in out
 
 
-def test_measurement_pass_flags_ambiguous_hop(monkeypatch, tmp_path, capsys):
-    # A hop whose loss% sits within the ambiguous band around the 20% threshold
-    # is where a real capture would test the threshold — it must be flagged.
-    # Pin to defaults: the band depends on path_loss_pct, and main() reads the
-    # ambient config otherwise (a non-default user config would skew the band).
+def test_measurement_pass_reports_the_thresholds_real_resolution(monkeypatch, tmp_path, capsys):
+    # Was: "flags a hop in the ambiguous band". That band ([10,30] around the 20%
+    # threshold) is unreachable — traceroute sends 3 probes, so a hop's loss is
+    # one of {0, 33.3, 66.7, 100} and never lands in it (issue #41). The old test
+    # only passed because it hand-wrote a 22.0% hop the capture pipeline cannot
+    # produce, which is precisely how the dead band went unnoticed. The pass now
+    # reports the instrument's real resolution instead of a band nothing reaches.
+    # Pin to defaults: main() reads the ambient config otherwise.
     monkeypatch.setenv("BOUNDARY_PROBE_CONFIG", str(tmp_path / "no-config.toml"))
     import json
     (tmp_path / "ambig.json").write_text(json.dumps({
@@ -206,5 +209,10 @@ def test_measurement_pass_flags_ambiguous_hop(monkeypatch, tmp_path, capsys):
     rc = mod.main(["calibrate.py", str(tmp_path)])
     assert rc == 0
     out = capsys.readouterr().out
-    assert "ambiguous band" in out
-    assert "hop 2" in out and "22.0%" in out
+    assert "measurable hop-loss values" in out
+    assert "[0.0, 33.33, 66.67, 100.0]" in out
+    # The honest statement of what the configured 20% actually means.
+    assert ">= 1 of 3 probes lost" in out
+    # The hand-written 22.0% hop still counts as over-threshold; it is simply not
+    # a value any real capture can yield.
+    assert "over-threshold=1" in out

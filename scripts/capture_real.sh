@@ -33,8 +33,15 @@ if [[ -x "$REPO_ROOT/.venv/bin/boundary-probe" ]]; then
 elif [[ -x "$REPO_ROOT/.venv/bin/python" ]]; then
   BP=("$REPO_ROOT/.venv/bin/python" -m boundary_probe.cli)
   PY=("$REPO_ROOT/.venv/bin/python")
+elif command -v boundary-probe >/dev/null 2>&1; then
+  # Installed from PyPI rather than run out of a checkout.
+  BP=(boundary-probe)
+  PY=(python)
 else
-  BP=(python -m boundary_probe.cli)
+  # Last resort: a bare `python -m boundary_probe.cli` cannot work against this
+  # src-layout package without help, and failing here with ModuleNotFoundError
+  # halfway through a capture is the worst possible moment.
+  BP=(env "PYTHONPATH=$REPO_ROOT/src" python -m boundary_probe.cli)
   PY=(python)
 fi
 
@@ -72,45 +79,48 @@ EOF
 status() {
   echo "Real-capture progress toward issue #13 (target: n >= $TARGET_N per boundary)"
   echo
-  "${PY[@]}" - "$FIXTURES" "$TARGET_N" <<'PYEOF'
-import json, pathlib, sys
-from collections import Counter
+  # Cohort classification comes from calibrate.py itself. An earlier version of
+  # this script reimplemented it here; the copy disagreed with the original in
+  # both directions on constructible fixtures, which would have told an operator
+  # a high-harm boundary was covered when calibrate refused to count it. The tool
+  # that consumes the data decides what counts as real.
+  local cohorts_json
+  cohorts_json="$("${PY[@]}" "$REPO_ROOT/scripts/calibrate.py" --cohorts-json "$FIXTURES")"
+  # Passed as argv, not stdin, so the script below can be a QUOTED heredoc: it
+  # needs both quote characters, and nesting them inside an f-string in a
+  # `python -c '...'` one-liner is a syntax error before Python 3.12.
+  "${PY[@]}" - "$TARGET_N" "$cohorts_json" <<'PYEOF'
+import json
+import sys
 
-fixtures, target_n = pathlib.Path(sys.argv[1]), int(sys.argv[2])
-real, other = Counter(), Counter()
-for path in sorted(fixtures.glob("*.json")):
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        continue
-    boundary = data.get("expected_boundary")
-    if not boundary:
-        continue
-    # Mirrors scripts/calibrate.py's _cohort: explicit method first, then the
-    # presence of a measurements block as the real-capture fingerprint.
-    method = data.get("capture_method")
-    if method == "real" or (method is None and "measurements" in data):
-        real[boundary] += 1
-    else:
-        other[boundary] += 1
+target_n = int(sys.argv[1])
+counts = json.loads(sys.argv[2])
+seed = ["healthy", "dns", "captive-portal", "remote-service", "isp-upstream",
+        "router-gateway", "wan-gateway", "local-device", "ipv6-only"]
+high_harm = ("router-gateway", "isp-upstream")
 
-boundaries = sorted(set(real) | set(other) | {
-    "healthy", "dns", "captive-portal", "remote-service", "isp-upstream",
-    "router-gateway", "wan-gateway", "local-device",
-})
-print(f"{'boundary':<16}{'real':>6}{'other':>7}{'still needed':>14}")
+header = ("boundary", "real", "other", "still needed")
+print(f"{header[0]:<16}{header[1]:>6}{header[2]:>7}{header[3]:>14}")
 print("-" * 43)
-for b in boundaries:
-    need = max(0, target_n - real[b])
-    flag = "  <- high-harm" if b in ("router-gateway", "isp-upstream") and real[b] == 0 else ""
-    print(f"{b:<16}{real[b]:>6}{other[b]:>7}{need:>14}{flag}")
-print()
-missing = [b for b in ("router-gateway", "isp-upstream") if real[b] == 0]
+for b in sorted(set(counts) | set(seed)):
+    c = counts.get(b, {})
+    real = c.get("real", 0)
+    other = c.get("synthetic", 0) + c.get("injected", 0)
+    flag = "  <- high-harm" if b in high_harm and real == 0 else ""
+    print(f"{b:<16}{real:>6}{other:>7}{max(0, target_n - real):>14}{flag}")
+
+missing = [b for b in high_harm if counts.get(b, {}).get("real", 0) == 0]
 if missing:
-    print("Start here — these carry the highest priors (0.99 / 0.93) on the")
+    print()
+    print("Start here - these carry the highest priors (0.99 / 0.93) on the")
     print("weakest evidence, and calibrate.py refuses to trust them:")
     for b in missing:
         print(f"  {b}")
+
+print()
+print("Counts key on the ground-truth boundary you labelled. The table in")
+print("calibrate.py keys on the PREDICTED boundary, so the two diverge wherever")
+print("the engine disagreed with a label - the interesting case, not a bug.")
 PYEOF
 }
 
@@ -186,7 +196,10 @@ PYEOF
   echo
   echo ">> saved tests/fixtures/$(basename "$fixture")"
   echo ">> progress:"
-  status | sed -n '3,$p' | head -14
+  # No `head` here: truncating this silently cut the "start here" list short,
+  # dropping the second high-harm boundary — the one thing the summary exists
+  # to surface. The table grows by a line per boundary, so any fixed cap rots.
+  status | sed -n '3,$p'
 }
 
 main "$@"

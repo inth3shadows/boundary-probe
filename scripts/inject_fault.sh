@@ -196,17 +196,16 @@ inject() {
       # netem loss, so packet_loss_after_hop1 fires across multiple targets
       # while dns_ok / gateway stay green.
       #
-      # The loss % is overridable so injected fixtures can SWEEP the engine's
-      # path-loss threshold (default 20%) instead of always sitting far above it:
+      # The netem loss % is overridable:
       #   sudo BP_ISP_LOSS_PCT=22 scripts/inject_fault.sh capture isp-loss
-      # A capture at 15/22/25% exercises the ambiguous band calibrate.py's
-      # measurement pass flags; the default 50% clears the bar cleanly (the prior
-      # behaviour). Each run writes the SAME tests/fixtures/isp-loss.json, so to
-      # keep several, rename after each capture:
-      #   mv tests/fixtures/isp-loss.json tests/fixtures/isp-loss-22.json
-      # (the capture name must stay 'isp-loss' — it keys the ground-truth map.)
+      # Do NOT expect the captured per-hop loss to match the value set here.
+      # traceroute sends 3 probes per hop, so a hop's measured loss can only be
+      # 0/33/67/100% regardless of the injected rate — see issue #41. The knob
+      # varies the fault's severity; it does not set a measured percentage.
       local isp_loss_pct="${BP_ISP_LOSS_PCT:-50}"
-      if ! [[ "$isp_loss_pct" =~ ^[0-9]+$ ]] || (( isp_loss_pct < 1 || isp_loss_pct > 100 )); then
+      # 10# forces base-10 so a leading zero is not read as octal (`08` raises an
+      # arithmetic error whose non-zero status the `||` would swallow).
+      if ! [[ "$isp_loss_pct" =~ ^[0-9]+$ ]] || (( 10#$isp_loss_pct < 1 || 10#$isp_loss_pct > 100 )); then
         echo "error: BP_ISP_LOSS_PCT must be an integer 1-100 (got '$isp_loss_pct')" >&2
         exit 2
       fi
@@ -273,46 +272,6 @@ run_all() {
   echo ">> done. Run: python scripts/calibrate.py" >&2
 }
 
-# Default sweep points for the path-loss threshold. The engine's threshold is
-# 20% and calibrate.py calls a hop "ambiguous" within 10pp of it, so these
-# bracket the band where the threshold earns or loses trust: two clearly below,
-# one on the line, two clearly above. The 50% run-all default sits far outside
-# it and never tests anything.
-SWEEP_DEFAULT=(10 15 20 25 30)
-
-# Capture isp-loss once per loss percentage, renaming each result so the next
-# run cannot overwrite it. Doing this by hand means a `mv` between every
-# capture; forgetting one silently destroys the previous data point, which is
-# the whole reason this exists as a command.
-sweep() {
-  local pcts=("$@")
-  [[ ${#pcts[@]} -gt 0 ]] || pcts=("${SWEEP_DEFAULT[@]}")
-
-  local pct
-  for pct in "${pcts[@]}"; do
-    if ! [[ "$pct" =~ ^[0-9]+$ ]] || (( pct < 1 || pct > 100 )); then
-      echo "error: sweep points must be integers 1-100 (got '$pct')" >&2
-      exit 2
-    fi
-  done
-
-  echo ">> sweeping path-loss threshold at: ${pcts[*]}%" >&2
-  local dest
-  for pct in "${pcts[@]}"; do
-    # The capture name must stay 'isp-loss' — it keys the ground-truth map — so
-    # the distinguishing part goes into the filename afterwards.
-    BP_ISP_LOSS_PCT="$pct" capture isp-loss
-    dest="$REPO_ROOT/tests/fixtures/isp-loss-${pct}.json"
-    mv "$REPO_ROOT/tests/fixtures/isp-loss.json" "$dest"
-    if [[ -n "${SUDO_UID:-}" ]]; then
-      chown "${SUDO_UID}:${SUDO_GID:-$SUDO_UID}" "$dest" 2>/dev/null || true
-    fi
-    echo ">> wrote $(basename "$dest")" >&2
-  done
-  echo ">> sweep done (${#pcts[@]} fixtures). Run: python scripts/calibrate.py" >&2
-  echo ">> these stay 'injected' — they widen threshold coverage, not the real cohort." >&2
-}
-
 # Ground-truth dump of the freshly-built topology — no probing through
 # boundary-probe, just raw kernel state and two pings. Run this when captures
 # misbehave to see whether the namespace baseline itself is broken.
@@ -341,11 +300,9 @@ main() {
     inject)   setup; inject "${2:?scenario required}" ;;
     capture)  capture "${2:?scenario required}" ;;
     run-all)  run_all ;;
-    sweep)    shift; sweep "$@" ;;
     *)
-      echo "usage: sudo $0 {run-all|capture <scenario>|sweep [pct...]|diag|setup|teardown|inject <scenario>}" >&2
+      echo "usage: sudo $0 {run-all|capture <scenario>|diag|setup|teardown|inject <scenario>}" >&2
       echo "scenarios: ${SCENARIOS[*]}" >&2
-      echo "sweep:     captures isp-loss at each loss % (default: ${SWEEP_DEFAULT[*]}) -> isp-loss-<pct>.json" >&2
       exit 2 ;;
   esac
 }

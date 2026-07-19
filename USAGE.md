@@ -108,6 +108,56 @@ TIMESTAMP             TARGET                    BOUNDARY          CONF  BAND    
 
 History is stored locally on your machine. It is never uploaded anywhere.
 
+## Escalating: the Report and the Support Bundle
+
+```powershell
+boundary-probe escalate <run-uuid>
+```
+
+Prints a plain-text report written for the party you are escalating to (ISP,
+service provider, IT desk, or yourself) and saves it as
+`escalation_<uuid8>.txt`. `--copy` puts it on the clipboard; `--no-file` skips
+the file.
+
+### Attaching a support bundle
+
+```powershell
+boundary-probe escalate <run-uuid> --export
+```
+
+Also writes `escalation_<uuid8>.json` — one self-contained file to attach to a
+ticket. Pass a path (`--export ticket-4711.json`) to name it yourself. It holds
+everything the report shows *plus* what the report summarizes away: the signal
+snapshot, every raw collector measurement (gateway RTT, per-hop traceroute data,
+control-host loss, DNS timings), the collector notes, and the rendered report
+text itself, so the recipient never has to ask you to re-run anything.
+
+Two fields make it verifiable rather than just readable:
+
+- `bundle_version` and `tool.version` — so a recipient can parse against a known
+  schema instead of guessing when the shape changes.
+- `integrity.payload_sha256` — a hash over the document with the `integrity` key
+  removed and the rest serialized with sorted keys and compact separators. It
+  proves the bundle was forwarded unedited.
+
+### Public IPs in the bundle
+
+Unlike `capture`, the bundle **keeps public IPs by default** — your gateway's
+address and the traceroute hops through your ISP. That is deliberate: for an
+`isp-upstream` verdict the WAN path *is* the evidence, and a redacted bundle is
+one your ISP cannot act on. The command prints a note when public IPs are
+present.
+
+Posting to a public forum instead of a support ticket? Redact them:
+
+```powershell
+boundary-probe escalate <run-uuid> --export --scrub
+```
+
+Private, CGNAT, and unanswered (`*`) hops survive scrubbing — they reveal nothing
+about you, and dropping them would erase the local-versus-upstream boundary the
+report depends on. Scrubbed bundles are re-hashed, so they still verify.
+
 ## Capturing a Fixture
 
 If you want to save a snapshot of current network conditions for sharing or later analysis:

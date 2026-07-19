@@ -346,3 +346,90 @@ def test_capture_real_roundtrip_with_no_default_route(monkeypatch, tmp_db, fake_
     assert "captured fixture" in output
     data = json.loads((tmp_path / "tests" / "fixtures" / "localdev.json").read_text(encoding="utf-8"))
     assert data["signals"]["default_route_present"] is False
+
+
+# ---------------------------------------------------------------------------
+# escalate --export support bundle (#17)
+# ---------------------------------------------------------------------------
+
+
+def _seeded_run_uuid(fake_collection_result):
+    """Insert a run with a public traceroute hop and return its uuid."""
+    from boundary_probe.engine import diagnose
+    from boundary_probe.store import connect, insert_run
+    from boundary_probe.targets import parse_target
+
+    from dataclasses import replace
+    res = replace(
+        fake_collection_result,
+        path_primary=replace(
+            fake_collection_result.path_primary,
+            raw_hops=[{"index": 2, "host": "72.14.205.1", "loss_pct": 0.0, "rtt_ms": 1.0}],
+        ),
+    )
+    parsed = parse_target("example.com")
+    with connect() as conn:
+        return insert_run(conn, parsed_target=parsed, snapshot=res.snapshot,
+                          diagnosis=diagnose(res.snapshot), collection_result=res)
+
+
+def test_escalate_export_writes_verifiable_bundle(tmp_db, fake_collection_result, tmp_path, monkeypatch):
+    import json
+    from boundary_probe.bundle import verify_bundle
+
+    uuid = _seeded_run_uuid(fake_collection_result)
+    monkeypatch.chdir(tmp_path)
+    out = _run(["escalate", uuid, "--export", "--no-file"])
+
+    path = tmp_path / f"escalation_{uuid[:8]}.json"
+    assert path.exists()
+    assert "Saved bundle:" in out
+    bundle = json.loads(path.read_text(encoding="utf-8"))
+    assert verify_bundle(bundle)
+    assert bundle["run"]["uuid"] == uuid
+    # The rendered report travels inside the bundle, so one attachment suffices.
+    assert "REQUESTED ACTION" in bundle["report_text"]
+
+
+def test_escalate_export_keeps_public_path_and_warns(tmp_db, fake_collection_result, tmp_path,
+                                                     monkeypatch, capsys):
+    import json
+
+    uuid = _seeded_run_uuid(fake_collection_result)
+    monkeypatch.chdir(tmp_path)
+    _run(["escalate", uuid, "--export", "--no-file"])
+
+    bundle = json.loads((tmp_path / f"escalation_{uuid[:8]}.json").read_text(encoding="utf-8"))
+    assert bundle["measurements"]["path_primary"]["raw_hops"][0]["host"] == "72.14.205.1"
+    assert "public IP" in capsys.readouterr().err
+
+
+def test_escalate_export_scrub_redacts(tmp_db, fake_collection_result, tmp_path, monkeypatch):
+    import json
+    from boundary_probe.bundle import SCRUB_PLACEHOLDER, verify_bundle
+
+    uuid = _seeded_run_uuid(fake_collection_result)
+    monkeypatch.chdir(tmp_path)
+    _run(["escalate", uuid, "--export", "--scrub", "--no-file"])
+
+    bundle = json.loads((tmp_path / f"escalation_{uuid[:8]}.json").read_text(encoding="utf-8"))
+    assert bundle["measurements"]["path_primary"]["raw_hops"][0]["host"] == SCRUB_PLACEHOLDER
+    assert bundle["redacted"] is True
+    assert verify_bundle(bundle)
+
+
+def test_escalate_export_honours_explicit_path(tmp_db, fake_collection_result, tmp_path, monkeypatch):
+    uuid = _seeded_run_uuid(fake_collection_result)
+    monkeypatch.chdir(tmp_path)
+    dest = tmp_path / "ticket-4711.json"
+    _run(["escalate", uuid, "--export", str(dest), "--no-file"])
+    assert dest.exists()
+
+
+def test_escalate_without_export_writes_no_bundle(tmp_db, fake_collection_result, tmp_path, monkeypatch):
+    # Default behaviour is unchanged: .txt only, no surprise second file.
+    uuid = _seeded_run_uuid(fake_collection_result)
+    monkeypatch.chdir(tmp_path)
+    _run(["escalate", uuid])
+    assert (tmp_path / f"escalation_{uuid[:8]}.txt").exists()
+    assert not (tmp_path / f"escalation_{uuid[:8]}.json").exists()

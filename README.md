@@ -5,9 +5,32 @@
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey)]()
 
-`boundary-probe` is a CLI tool for deterministic network boundary diagnosis. It runs a targeted set of probes, classifies the most likely failure boundary with a confidence score, and gives the operator specific remediation steps — not generic advice.
+**Internet down? One command tells you where it broke, and what to do about it.**
+Your device, the router, the modem, a captive portal, DNS, your ISP, or the site
+you're trying to reach. `boundary-probe` runs a set of probes and names the failing
+boundary with the evidence that points there, instead of "have you tried restarting
+your router?".
 
-The boundaries it answers: **local device / LAN**, **router-gateway**, **WAN/modem**, **captive portal**, **DNS**, **ISP upstream path**, and **remote service**. Every result is backed by evidence collected in the same run and stored locally in SQLite for history review.
+Here's the verdict for a network where DNS is broken but everything else works:
+
+```text
+Boundary:   dns   (confidence 0.96)
+Summary:    Raw connectivity is available, but name resolution is failing.
+
+Evidence:
+- gateway: Local gateway is reachable.
+- ip-connectivity: Direct IP connectivity still works.
+- dns: DNS lookups are failing or inconsistent.
+
+Next steps:
+- Retry the lookup using a known-good resolver such as 1.1.1.1 or 8.8.8.8.
+- Inspect the router or OS DNS settings for stale or unreachable resolvers.
+- If only one resolver fails, replace it before changing broader network settings.
+```
+
+- **Deterministic.** A rule engine, not a model: the same signals give the same verdict every time.
+- **Evidence, not guesses.** Every verdict cites what this run measured, and every run is saved locally so you can compare it with the next one.
+- **No dependencies.** Standard library Python plus your OS's own `ping`/`traceroute`; Windows, Linux and macOS.
 
 ## Demo
 
